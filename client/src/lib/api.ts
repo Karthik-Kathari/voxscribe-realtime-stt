@@ -33,6 +33,8 @@ export interface UpdateTranscriptionPayload {
   content?: string;
   language?: string;
   detectedLanguages?: string[];
+  durationSeconds?: number;
+  segments?: TranscriptSegment[];
   notes?: string;
   isFavorite?: boolean;
 }

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  FilePlus2,
   Mic,
+  Play,
   RotateCcw,
   Save,
   Square,
@@ -16,8 +18,22 @@ import {
   type EngineStatus,
   type SttEngine,
   type TranscriptSegment,
+  type Transcription,
 } from "../types";
 import { TtsSpeedControl } from "./TtsSpeedControl";
+
+type NextRecordBehavior = "ask" | "continue" | "new";
+const NEXT_RECORD_STORAGE_KEY = "voxscribe_next_record_behavior";
+
+function getSavedNextRecordBehavior(): NextRecordBehavior {
+  try {
+    const val = localStorage.getItem(NEXT_RECORD_STORAGE_KEY);
+    if (val === "ask" || val === "continue" || val === "new") return val;
+  } catch {
+    // ignore storage errors
+  }
+  return "ask";
+}
 
 interface LiveTranscriberProps {
   engineStatus: EngineStatus | null;
@@ -25,13 +41,14 @@ interface LiveTranscriberProps {
   onTtsRateChange: (rate: number) => void;
   hotkeyDisabled?: boolean;
   onSaveTranscription: (payload: {
+    id?: string;
     title?: string;
     content: string;
     language: string;
     engine: string;
     durationSeconds: number;
     segments: TranscriptSegment[];
-  }) => Promise<void>;
+  }) => Promise<Transcription>;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -68,6 +85,12 @@ export function LiveTranscriber({
   const [isRecording, setIsRecording] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
+  const [nextBehavior, setNextBehavior] = useState<NextRecordBehavior>(() =>
+    getSavedNextRecordBehavior()
+  );
+  const [showContinuePrompt, setShowContinuePrompt] = useState(false);
+  const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+
   const [title, setTitle] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [interimText, setInterimText] = useState("");
@@ -90,7 +113,10 @@ export function LiveTranscriber({
   const segmentsRef = useRef<TranscriptSegment[]>([]);
   const interimRef = useRef("");
   const elapsedRef = useRef(0);
-  const hasSavedCurrentRef = useRef(false);
+  const activeRecordIdRef = useRef<string | null>(null);
+  const editedTextRef = useRef<string | null>(null);
+  const showPromptRef = useRef(false);
+  const nextBehaviorRef = useRef<NextRecordBehavior>(nextBehavior);
   const doneResolverRef = useRef<(() => void) | null>(null);
 
   const activeLanguageConfig =
@@ -121,11 +147,37 @@ export function LiveTranscriber({
   }, [elapsedSeconds]);
 
   useEffect(() => {
+    activeRecordIdRef.current = activeRecordId;
+  }, [activeRecordId]);
+
+  useEffect(() => {
+    editedTextRef.current = editedText;
+  }, [editedText]);
+
+  useEffect(() => {
+    showPromptRef.current = showContinuePrompt;
+  }, [showContinuePrompt]);
+
+  useEffect(() => {
+    nextBehaviorRef.current = nextBehavior;
+  }, [nextBehavior]);
+
+  useEffect(() => {
     return () => {
       void forceCloseTransport();
       stopSpeaking();
     };
   }, []);
+
+  const updateNextBehavior = (mode: NextRecordBehavior) => {
+    setNextBehavior(mode);
+    nextBehaviorRef.current = mode;
+    try {
+      localStorage.setItem(NEXT_RECORD_STORAGE_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   const combinedText = (
     editedText !== null
@@ -135,11 +187,16 @@ export function LiveTranscriber({
           .join(" ")
   ).trim();
 
-  const startTimer = () => {
+  const startTimer = (initialSeconds = 0) => {
     stopTimer();
-    setElapsedSeconds(0);
+    elapsedRef.current = initialSeconds;
+    setElapsedSeconds(initialSeconds);
     timerRef.current = window.setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      setElapsedSeconds((prev) => {
+        const next = prev + 1;
+        elapsedRef.current = next;
+        return next;
+      });
     }, 1000);
   };
 
@@ -202,14 +259,15 @@ export function LiveTranscriber({
         recognitionRef.current.onend = null;
         recognitionRef.current.stop();
       } catch {
-        // ignore speech recognition teardown errors
+        // ignore teardown errors
       }
       recognitionRef.current = null;
     }
   };
 
   const startWebSocketEngine = async (
-    selectedEngine: "gemini-live-3.1" | "faster-whisper"
+    selectedEngine: "gemini-live-3.1" | "faster-whisper",
+    initialElapsed: number
   ) => {
     isConnectingRef.current = true;
     setIsConnecting(true);
@@ -325,8 +383,12 @@ export function LiveTranscriber({
       isConnectingRef.current = false;
       setIsConnecting(false);
       setIsRecording(true);
-      startTimer();
-      setStatusNote("Listening live... Press Space when finished.");
+      startTimer(initialElapsed);
+      setStatusNote(
+        activeRecordIdRef.current
+          ? "Continuing current note... Press Space when finished."
+          : "Listening live... Press Space when finished."
+      );
     } catch (micErr) {
       earlyPcmQueue.length = 0;
       setError(
@@ -341,7 +403,7 @@ export function LiveTranscriber({
     }
   };
 
-  const startBrowserSpeechEngine = () => {
+  const startBrowserSpeechEngine = (initialElapsed: number) => {
     const win = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
@@ -396,40 +458,93 @@ export function LiveTranscriber({
     isRecordingRef.current = true;
     setError(null);
     setIsRecording(true);
-    startTimer();
+    startTimer(initialElapsed);
     setStatusNote(
       `Listening via Browser Speech (${activeLanguageConfig.speechLang})...`
     );
     recognition.start();
   };
 
-  const handleStart = async () => {
-    if (isRecordingRef.current || isConnectingRef.current) return;
+  const resetSessionState = () => {
+    segmentsRef.current = [];
+    interimRef.current = "";
+    editedTextRef.current = null;
+    activeRecordIdRef.current = null;
+    elapsedRef.current = 0;
+    setSegments([]);
+    setInterimText("");
+    setEditedText(null);
+    setActiveRecordId(null);
+    setTitle("");
+    setElapsedSeconds(0);
     setError(null);
-    if (hasSavedCurrentRef.current) {
-      segmentsRef.current = [];
-      interimRef.current = "";
-      setSegments([]);
-      setInterimText("");
-      setEditedText(null);
-      setTitle("");
-      setElapsedSeconds(0);
-      hasSavedCurrentRef.current = false;
-    } else if (editedText !== null) {
+  };
+
+  const beginRecording = async (mode: "continue" | "new") => {
+    if (isRecordingRef.current || isConnectingRef.current) return;
+    setShowContinuePrompt(false);
+    showPromptRef.current = false;
+    setError(null);
+
+    let initialElapsed = elapsedRef.current;
+
+    if (mode === "new") {
+      resetSessionState();
+      initialElapsed = 0;
+    } else if (editedTextRef.current !== null) {
+      // Preserve any manual edits made before continuing
+      const edited = editedTextRef.current.trim();
+      const carriedSegments: TranscriptSegment[] = edited
+        ? [
+            {
+              id: `${Date.now()}-edited`,
+              text: edited,
+              timestamp: new Date().toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              }),
+            },
+          ]
+        : [];
+      segmentsRef.current = carriedSegments;
+      setSegments(carriedSegments);
+      editedTextRef.current = null;
       setEditedText(null);
     }
 
     if (engine === "web-speech") {
-      startBrowserSpeechEngine();
+      startBrowserSpeechEngine(initialElapsed);
     } else {
-      await startWebSocketEngine(engine);
+      await startWebSocketEngine(engine, initialElapsed);
     }
+  };
+
+  const handleRecordTrigger = async () => {
+    if (isRecordingRef.current || isConnectingRef.current) return;
+
+    const hasExistingContent =
+      segmentsRef.current.length > 0 ||
+      Boolean(interimRef.current.trim()) ||
+      Boolean(editedTextRef.current?.trim());
+
+    // If there's an already-saved note in the studio, follow the user's preference
+    if (hasExistingContent && activeRecordIdRef.current) {
+      if (nextBehaviorRef.current === "ask") {
+        setShowContinuePrompt(true);
+        showPromptRef.current = true;
+        return;
+      }
+      await beginRecording(nextBehaviorRef.current);
+      return;
+    }
+
+    await beginRecording("continue");
   };
 
   const handleStop = async (triggerAutoSave = true) => {
     const currentDuration = elapsedRef.current;
 
-    // 1. Immediately stop mic capture & timer
     isRecordingRef.current = false;
     isConnectingRef.current = false;
     setIsRecording(false);
@@ -456,7 +571,6 @@ export function LiveTranscriber({
       recognitionRef.current = null;
     }
 
-    // 2. Gracefully flush final buffered audio over WebSocket & wait briefly for "done"
     const ws = wsRef.current;
     if (ws) {
       if (ws.readyState === WebSocket.OPEN) {
@@ -486,7 +600,6 @@ export function LiveTranscriber({
       wsRef.current = null;
     }
 
-    // 3. Commit any remaining interim text
     const finalInterim = interimRef.current.trim();
     if (finalInterim) {
       appendFinalSegment(finalInterim);
@@ -500,10 +613,14 @@ export function LiveTranscriber({
       .trim();
 
     if (triggerAutoSave && autoSave && fullContent) {
-      setStatusNote("Saving note to PostgreSQL...");
+      setStatusNote(
+        activeRecordIdRef.current
+          ? "Updating note in PostgreSQL..."
+          : "Saving note to PostgreSQL..."
+      );
       await persistCurrent(fullContent, segmentsRef.current, currentDuration);
     } else {
-      setStatusNote("Stopped. Review, edit, or save below.");
+      setStatusNote("Stopped. Continue speaking, edit, or save below.");
     }
   };
 
@@ -518,16 +635,20 @@ export function LiveTranscriber({
     setSaving(true);
     setError(null);
     try {
-      await onSaveTranscription({
+      const saved = await onSaveTranscription({
+        id: activeRecordIdRef.current ?? undefined,
         title: title.trim() || undefined,
         content: contentToSave,
         language,
         engine,
-        durationSeconds: overrideDuration ?? elapsedSeconds,
+        durationSeconds: overrideDuration ?? elapsedRef.current,
         segments: overrideSegments ?? segmentsRef.current,
       });
-      hasSavedCurrentRef.current = true;
-      setStatusNote("Saved to history. Press Space anytime to record a new note.");
+      activeRecordIdRef.current = saved.id;
+      setActiveRecordId(saved.id);
+      setStatusNote(
+        "Saved to PostgreSQL. Click Continue to append or New Session for a fresh note."
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to save transcription"
@@ -537,18 +658,12 @@ export function LiveTranscriber({
     }
   };
 
-  const handleReset = () => {
+  const handleNewSession = () => {
     if (isRecording) return;
-    segmentsRef.current = [];
-    interimRef.current = "";
-    setSegments([]);
-    setInterimText("");
-    setEditedText(null);
-    setTitle("");
-    setElapsedSeconds(0);
-    hasSavedCurrentRef.current = false;
-    setError(null);
-    setStatusNote("Cleared. Press Space or click Record to start.");
+    setShowContinuePrompt(false);
+    showPromptRef.current = false;
+    resetSessionState();
+    setStatusNote("New session ready. Press Space or click Record to start.");
   };
 
   const handleTtsPreview = () => {
@@ -566,12 +681,13 @@ export function LiveTranscriber({
     });
   };
 
-  // Expose keyboard handlers via refs for Space, P (Read Aloud), Ctrl+S (Save)
-  const handleStartRef = useRef(handleStart);
+  const handleTriggerRef = useRef(handleRecordTrigger);
+  const handleBeginRef = useRef(beginRecording);
   const handleStopRef = useRef(handleStop);
   const handleTtsRef = useRef(handleTtsPreview);
   const handleSaveRef = useRef(persistCurrent);
-  handleStartRef.current = handleStart;
+  handleTriggerRef.current = handleRecordTrigger;
+  handleBeginRef.current = beginRecording;
   handleStopRef.current = handleStop;
   handleTtsRef.current = handleTtsPreview;
   handleSaveRef.current = persistCurrent;
@@ -580,7 +696,26 @@ export function LiveTranscriber({
     const onKeyDown = (e: KeyboardEvent) => {
       if (hotkeyDisabled) return;
 
-      // Ctrl+S / Cmd+S works even inside inputs/textareas to save active note
+      // Handle quick choices inside the inline Continue vs New Session prompt
+      if (showPromptRef.current) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowContinuePrompt(false);
+          showPromptRef.current = false;
+          return;
+        }
+        if (e.key.toLowerCase() === "c" || e.key === "Enter") {
+          e.preventDefault();
+          void handleBeginRef.current("continue");
+          return;
+        }
+        if (e.key.toLowerCase() === "n") {
+          e.preventDefault();
+          void handleBeginRef.current("new");
+          return;
+        }
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         if (!isRecordingRef.current) {
@@ -608,7 +743,7 @@ export function LiveTranscriber({
         if (isRecordingRef.current) {
           void handleStopRef.current(true);
         } else if (!isConnectingRef.current) {
-          void handleStartRef.current();
+          void handleTriggerRef.current();
         }
       } else if (e.key.toLowerCase() === "p") {
         e.preventDefault();
@@ -642,14 +777,23 @@ export function LiveTranscriber({
     },
   ];
 
+  const hasSavedActiveNote = Boolean(activeRecordId && combinedText);
+
   return (
     <section className="overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       {/* Toolbar Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ece9e2] px-5 py-3.5 sm:px-6">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">
-            Voice Recorder
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">
+              Voice Recorder
+            </h2>
+            {activeRecordId && (
+              <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                Synced to DB
+              </span>
+            )}
+          </div>
           <p className="text-xs text-stone-500">{statusNote}</p>
         </div>
 
@@ -716,65 +860,147 @@ export function LiveTranscriber({
         )}
 
         {/* Record Bar */}
-        <div className="flex flex-col justify-between gap-4 rounded-xl border border-[#e5e2da] bg-[#faf9f5] px-4 py-3.5 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3.5">
-            {!isRecording ? (
-              <button
-                type="button"
-                disabled={isConnecting}
-                onClick={() => void handleStart()}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
-                title="Start recording (Space)"
-              >
-                <Mic className="h-5 w-5" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleStop(true)}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:bg-zinc-800 active:scale-95"
-                title="Stop recording (Space)"
-              >
-                <Square className="h-4 w-4 fill-current" />
-              </button>
-            )}
+        <div className="space-y-3 rounded-xl border border-[#e5e2da] bg-[#faf9f5] px-4 py-3.5">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3.5">
+              {!isRecording ? (
+                <button
+                  type="button"
+                  disabled={isConnecting}
+                  onClick={() => void handleRecordTrigger()}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
+                  title="Start or resume recording (Space)"
+                >
+                  <Mic className="h-5 w-5" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleStop(true)}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:bg-zinc-800 active:scale-95"
+                  title="Stop recording (Space)"
+                >
+                  <Square className="h-4 w-4 fill-current" />
+                </button>
+              )}
 
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-zinc-900">
-                  {isConnecting
-                    ? "Connecting..."
-                    : isRecording
-                      ? "Recording"
-                      : "Start Recording"}
-                </span>
-                <span className="rounded border border-[#e2dfd7] bg-white px-2 py-0.5 font-mono text-xs text-zinc-700">
-                  {formatDuration(elapsedSeconds)}
-                </span>
-                <kbd className="hidden items-center rounded border border-[#d8d4ca] bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-500 sm:inline-flex">
-                  Space
-                </kbd>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-zinc-900">
+                    {isConnecting
+                      ? "Connecting..."
+                      : isRecording
+                        ? "Recording"
+                        : hasSavedActiveNote
+                          ? "Resume or New Session"
+                          : "Start Recording"}
+                  </span>
+                  <span className="rounded border border-[#e2dfd7] bg-white px-2 py-0.5 font-mono text-xs text-zinc-700">
+                    {formatDuration(elapsedSeconds)}
+                  </span>
+                  <kbd className="hidden items-center rounded border border-[#d8d4ca] bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-500 sm:inline-flex">
+                    Space
+                  </kbd>
+                </div>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  Try:{" "}
+                  <span className="italic text-stone-600">
+                    &ldquo;{activeLanguageConfig.sample}&rdquo;
+                  </span>
+                </p>
               </div>
-              <p className="mt-0.5 text-xs text-stone-500">
-                Try:{" "}
-                <span className="italic text-stone-600">
-                  &ldquo;{activeLanguageConfig.sample}&rdquo;
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+              {/* Next mic press behavior selector */}
+              <div
+                className="inline-flex items-center gap-1 rounded-lg border border-[#e2dfd7] bg-white px-2 py-1"
+                title="Choose what happens when you press Mic after stopping a saved note"
+              >
+                <span className="text-[10px] font-medium text-stone-500">
+                  Next mic:
                 </span>
-              </p>
+                {(
+                  [
+                    { id: "ask", label: "Ask" },
+                    { id: "continue", label: "Continue" },
+                    { id: "new", label: "New" },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={isRecording}
+                    onClick={() => updateNextBehavior(opt.id)}
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                      nextBehavior === opt.id
+                        ? "bg-zinc-900 text-white"
+                        : "text-stone-600 hover:bg-stone-100"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex h-9 items-center gap-1">
+                {waveform.map((h, i) => (
+                  <span
+                    key={i}
+                    style={{ height: `${h}%` }}
+                    className={`w-1 rounded-full transition-all duration-75 ${
+                      isRecording ? "bg-red-600" : "bg-[#d6d2c8]"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="flex h-9 items-center gap-1 self-end sm:self-center">
-            {waveform.map((h, i) => (
-              <span
-                key={i}
-                style={{ height: `${h}%` }}
-                className={`w-1 rounded-full transition-all duration-75 ${
-                  isRecording ? "bg-red-600" : "bg-[#d6d2c8]"
-                }`}
-              />
-            ))}
-          </div>
+          {/* Inline Continue vs Start New Session Prompt */}
+          {showContinuePrompt && !isRecording && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/80 bg-amber-50/70 px-3.5 py-2.5">
+              <p className="text-xs font-medium text-zinc-800">
+                This note is already saved. Do you want to{" "}
+                <strong>continue adding</strong> to it or{" "}
+                <strong>start a new session</strong>?
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void beginRecording("continue")}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800"
+                >
+                  <Play className="h-3 w-3 fill-current" />
+                  <span>Continue Note</span>
+                  <kbd className="rounded bg-zinc-700 px-1 text-[10px] text-zinc-200">
+                    C
+                  </kbd>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void beginRecording("new")}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-stone-50"
+                >
+                  <FilePlus2 className="h-3.5 w-3.5" />
+                  <span>New Session</span>
+                  <kbd className="rounded border border-stone-200 bg-stone-50 px-1 text-[10px] text-stone-500">
+                    N
+                  </kbd>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContinuePrompt(false);
+                    showPromptRef.current = false;
+                  }}
+                  className="px-2 py-1 text-xs text-stone-500 hover:text-zinc-900"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Title + Live / Editable Transcript */}
@@ -799,10 +1025,22 @@ export function LiveTranscriber({
             ) : segments.length === 0 && !interimText ? (
               <div className="flex h-24 flex-col items-center justify-center text-center text-xs text-stone-400">
                 <p>
-                  Live words in <strong className="font-medium text-stone-600">{activeLanguageConfig.label}</strong> appear here as you speak.
+                  Live words in{" "}
+                  <strong className="font-medium text-stone-600">
+                    {activeLanguageConfig.label}
+                  </strong>{" "}
+                  appear here as you speak.
                 </p>
                 <p className="mt-1 text-[11px] text-stone-400">
-                  Press <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">Space</kbd> to toggle the mic or <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">?</kbd> for all shortcuts.
+                  Press{" "}
+                  <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">
+                    Space
+                  </kbd>{" "}
+                  to toggle the mic or{" "}
+                  <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">
+                    ?
+                  </kbd>{" "}
+                  for all shortcuts.
                 </p>
               </div>
             ) : (
@@ -854,25 +1092,44 @@ export function LiveTranscriber({
                 </button>
               )}
 
+              {!isRecording && combinedText && (
+                <button
+                  type="button"
+                  onClick={() => void beginRecording("continue")}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 transition hover:bg-stone-50"
+                  title="Append more speech to this note"
+                >
+                  <Mic className="h-3.5 w-3.5 text-red-600" />
+                  <span>Continue</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 disabled={isRecording || !combinedText}
-                onClick={handleReset}
+                onClick={handleNewSession}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-40"
+                title="Clear and start a fresh recording session"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                <span>Clear</span>
+                <span>New Session</span>
               </button>
 
               <button
                 type="button"
                 disabled={isRecording || saving || !combinedText}
                 onClick={() => void persistCurrent()}
-                title="Save note to PostgreSQL (Ctrl+S)"
+                title="Save or update note in PostgreSQL (Ctrl+S)"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
               >
                 <Save className="h-3.5 w-3.5" />
-                <span>{saving ? "Saving..." : "Save Note"}</span>
+                <span>
+                  {saving
+                    ? "Saving..."
+                    : activeRecordId
+                      ? "Update Note"
+                      : "Save Note"}
+                </span>
               </button>
             </div>
           </div>

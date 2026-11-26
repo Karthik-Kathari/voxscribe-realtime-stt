@@ -68,6 +68,7 @@ export function App() {
   // Global app shortcuts: ? (Shortcuts), [ / ] (TTS speed), 0 (Reset speed), N (New Note), / (Search), Esc (Close/Stop)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.key === "Escape") {
         if (shortcutsOpen) {
           setShortcutsOpen(false);
@@ -173,16 +174,36 @@ export function App() {
   };
 
   const handleSaveFromLive = async (payload: {
+    id?: string;
     title?: string;
     content: string;
     language: string;
     engine: string;
     durationSeconds: number;
     segments: TranscriptSegment[];
-  }) => {
-    await createTranscription(payload);
+  }): Promise<Transcription> => {
+    let saved: Transcription;
+    if (payload.id) {
+      try {
+        saved = await updateTranscription(payload.id, {
+          title: payload.title,
+          content: payload.content,
+          language: payload.language,
+          durationSeconds: payload.durationSeconds,
+          segments: payload.segments,
+        });
+        showToast("Updated current note in PostgreSQL");
+      } catch {
+        // Fallback to creating a new row if the previous note was deleted
+        saved = await createTranscription(payload);
+        showToast("Saved note to PostgreSQL");
+      }
+    } else {
+      saved = await createTranscription(payload);
+      showToast("Saved note to PostgreSQL");
+    }
     await refreshAll();
-    showToast("Saved note to PostgreSQL");
+    return saved;
   };
 
   const handleModalSave = async (payload: {

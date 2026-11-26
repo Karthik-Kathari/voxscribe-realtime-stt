@@ -42,10 +42,10 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-2xl"
+        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#ece9e2] px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-[#ece9e2] px-5 py-3">
           <div className="flex items-center gap-2">
             <Keyboard className="h-4 w-4 text-zinc-800" />
             <h2 className="text-sm font-semibold text-zinc-900">
@@ -62,17 +62,17 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
           </button>
         </div>
 
-        <div className="space-y-5 p-5">
+        <div className="flex-1 space-y-3.5 overflow-y-auto p-4 sm:p-5">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title}>
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
                 {group.title}
               </h3>
               <div className="divide-y divide-[#f0ede6] rounded-lg border border-[#e5e2da] bg-[#faf9f5]">
                 {group.items.map((item) => (
                   <div
                     key={item.description}
-                    className="flex items-center justify-between gap-4 px-3.5 py-2.5"
+                    className="flex items-center justify-between gap-4 px-3 py-2"
                   >
                     <span className="text-xs text-zinc-700">
                       {item.description}
@@ -96,7 +96,7 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
           ))}
         </div>
 
-        <div className="border-t border-[#ece9e2] bg-[#faf9f5] px-5 py-2.5 text-[11px] text-stone-500">
+        <div className="shrink-0 border-t border-[#ece9e2] bg-[#faf9f5] px-5 py-2.5 text-[11px] text-stone-500">
           Single-key shortcuts pause automatically while you are typing inside text fields.
         </div>
       </div>

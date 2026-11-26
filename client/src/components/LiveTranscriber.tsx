@@ -84,6 +84,8 @@ export function LiveTranscriber({
   const segmentsRef = useRef<TranscriptSegment[]>([]);
   const interimRef = useRef("");
   const elapsedRef = useRef(0);
+  const hasSavedCurrentRef = useRef(false);
+  const [editedText, setEditedText] = useState<string | null>(null);
 
   // Sync default engine once health check resolves
   useEffect(() => {
@@ -116,13 +118,13 @@ export function LiveTranscriber({
     };
   }, []);
 
-  const combinedText = [
-    segments.map((s) => s.text).join(" "),
-    interimText.trim(),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const combinedText = (
+    editedText !== null
+      ? editedText
+      : [segments.map((s) => s.text).join(" "), interimText.trim()]
+          .filter(Boolean)
+          .join(" ")
+  ).trim();
 
   const startTimer = () => {
     stopTimer();
@@ -261,13 +263,12 @@ export function LiveTranscriber({
             appendFinalSegment(msg.text, msg.language);
             setInterimText("");
           } else {
-            // Gemini Live emits progressive transcript chunks on inputTranscription
+            // Gemini Live emits progressive BPE transcript chunks on inputTranscription
             setInterimText((prev) => {
               const incoming = msg.text || "";
               if (!prev) return incoming;
-              // Append smoothly if it's a delta token, or replace if cumulative
               if (incoming.startsWith(prev)) return incoming;
-              return `${prev}${incoming.startsWith(" ") || prev.endsWith(" ") ? "" : " "}${incoming}`;
+              return prev + incoming;
             });
           }
         } else if (msg.type === "turn_complete") {
@@ -363,6 +364,16 @@ export function LiveTranscriber({
   const handleStart = async () => {
     if (isRecording || isConnecting) return;
     setError(null);
+    if (hasSavedCurrentRef.current) {
+      setSegments([]);
+      setInterimText("");
+      setEditedText(null);
+      setTitle("");
+      setElapsedSeconds(0);
+      hasSavedCurrentRef.current = false;
+    } else if (editedText !== null) {
+      setEditedText(null);
+    }
     if (engine === "web-speech") {
       startBrowserSpeechEngine();
     } else {
@@ -426,6 +437,7 @@ export function LiveTranscriber({
         durationSeconds: overrideDuration ?? elapsedSeconds,
         segments: overrideSegments ?? segments,
       });
+      hasSavedCurrentRef.current = true;
       setStatusNote("Saved to PostgreSQL transcription history!");
     } catch (err) {
       setError(
@@ -440,8 +452,10 @@ export function LiveTranscriber({
     if (isRecording) return;
     setSegments([]);
     setInterimText("");
+    setEditedText(null);
     setTitle("");
     setElapsedSeconds(0);
+    hasSavedCurrentRef.current = false;
     setError(null);
     setStatusNote("Cleared workspace. Ready for a new recording.");
   };
@@ -664,7 +678,15 @@ export function LiveTranscriber({
           />
 
           <div className="min-h-[150px] rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-            {segments.length === 0 && !interimText ? (
+            {!isRecording && (segments.length > 0 || editedText !== null) ? (
+              <textarea
+                rows={5}
+                value={editedText ?? combinedText}
+                onChange={(e) => setEditedText(e.target.value)}
+                placeholder="Edit your captured transcript..."
+                className="w-full resize-y bg-transparent text-sm leading-relaxed text-slate-100 focus:outline-none"
+              />
+            ) : segments.length === 0 && !interimText ? (
               <div className="flex h-28 flex-col items-center justify-center text-center text-xs text-slate-500">
                 <p>Your real-time multilingual transcription will appear here word by word.</p>
                 <p className="mt-1 text-[11px] text-slate-600">

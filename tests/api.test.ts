@@ -152,5 +152,21 @@ describe("CRUD API integration against Neon PostgreSQL", () => {
     );
     assert.equal(getDeleted.status, 404);
   });
+
+  it("POST /api/tts synthesizes natural MP3 audio for Hinglish text", async () => {
+    const res = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "Hello team, aaj ka standup 5 minute mein start karte hain.",
+        language: "hi-en",
+      }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "audio/mpeg");
+    assert.equal(res.headers.get("x-tts-voice"), "hi-IN-SwaraNeural");
+    const buf = await res.arrayBuffer();
+    assert.ok(buf.byteLength > 5000);
+  });
 });
 

@@ -53,8 +53,8 @@ async function bridgeGeminiLiveSocket(
 
   const languageHint =
     language === "hi-en" || language === "multilingual"
-      ? "The speaker may switch freely between Hindi, English (Hinglish), and other Indian languages."
-      : `The primary spoken language is ${language}.`;
+      ? "The speaker is speaking Indian English mixed with Hindi (Hinglish) or other Indian languages. Transcribe every word verbatim with accurate spelling (including tech words like standup, sprint, deploy, database, API)."
+      : `The primary spoken language is ${language}. Transcribe verbatim.`;
 
   try {
     session = await ai.live.connect({

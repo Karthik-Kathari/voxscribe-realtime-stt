@@ -9,6 +9,7 @@ import { WebSocketServer } from "ws";
 import { config } from "./config.js";
 import { ensureSchema, pool } from "./db/index.js";
 import transcriptionsRouter from "./routes/transcriptions.js";
+import ttsRouter from "./routes/tts.js";
 import { handleTranscribeSocket } from "./ws/transcribe.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -46,6 +47,7 @@ export function createApp() {
   });
 
   app.use("/api/transcriptions", transcriptionsRouter);
+  app.use("/api/tts", ttsRouter);
 
   // Serve built React frontend when present (e.g. production / Render / Docker)
   const clientDistDir = path.resolve(__dirname, "../../dist/client");

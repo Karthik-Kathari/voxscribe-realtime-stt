@@ -38,10 +38,10 @@ function Reveal({
     <div
       ref={ref}
       style={{ transitionDelay: `${delayMs}ms` }}
-      className={`transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-opacity motion-reduce:transform-none ${
+      className={`transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
         visible
           ? "opacity-100 translate-y-0 scale-100"
-          : "opacity-0 translate-y-8 scale-[0.97]"
+          : "opacity-0 translate-y-8 scale-[0.96]"
       } ${className}`}
     >
       {children}

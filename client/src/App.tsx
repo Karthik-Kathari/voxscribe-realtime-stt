@@ -20,13 +20,15 @@ import {
   getSavedTtsRate,
   saveTtsRate,
   setLivePlaybackRate,
+  speakText,
   stopSpeaking,
 } from "./lib/tts";
-import type {
-  EngineStatus,
-  TranscriptSegment,
-  Transcription,
-  TranscriptionStats,
+import {
+  formatDuration,
+  type EngineStatus,
+  type TranscriptSegment,
+  type Transcription,
+  type TranscriptionStats,
 } from "./types";
 
 function resolveViewFromPath(pathname: string): AppView {
@@ -321,7 +323,13 @@ export function App() {
         >
           {view === "studio" ? (
             <>
-              <StatsBar stats={stats} />
+              <StatsBar
+                stats={stats}
+                onOpenHistory={(starredOnly) => {
+                  setFavoriteOnly(Boolean(starredOnly));
+                  navigate("history");
+                }}
+              />
               <LiveTranscriber
                 engineStatus={engineStatus}
                 ttsRate={ttsRate}
@@ -330,6 +338,117 @@ export function App() {
                 onSaveTranscription={handleSaveFromLive}
                 onToast={showToast}
               />
+
+              {/* Recent Transcriptions Preview directly in Studio */}
+              <section className="rounded-2xl bg-surface-container-low border border-outline-variant p-5 lg:p-6 flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-headline text-base font-semibold text-on-surface">
+                      Recent Transcriptions
+                    </h2>
+                    <p className="text-xs text-on-surface-variant">
+                      Latest notes saved in PostgreSQL · Open History Library for full search &amp; filters
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFavoriteOnly(false);
+                      navigate("history");
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-surface-container-high border border-outline-variant text-secondary hover:bg-surface-bright text-xs font-medium transition cursor-pointer"
+                  >
+                    <span>View All ({total})</span>
+                    <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                      arrow_forward
+                    </span>
+                  </button>
+                </div>
+
+                {items.length === 0 ? (
+                  <p className="text-xs text-outline py-4">
+                    No transcriptions saved yet. Record or click Demo Speech above to create your first entry.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {items.slice(0, 4).map((item, idx) => (
+                      <article
+                        key={item.id}
+                        style={{ animationDelay: `${idx * 60}ms` }}
+                        className="animate-card-cascade card-hover rounded-xl bg-surface-container-lowest border border-outline-variant p-4 flex flex-col justify-between gap-3"
+                      >
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-headline text-sm font-semibold text-on-surface truncate">
+                              {item.title}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleFavorite(item)}
+                              aria-label="Toggle star"
+                              className={`p-1 rounded ${
+                                item.isFavorite ? "text-warning" : "text-outline hover:text-warning"
+                              } cursor-pointer`}
+                            >
+                              <span
+                                className="material-symbols-outlined text-sm"
+                                style={{
+                                  fontVariationSettings: `'FILL' ${item.isFavorite ? 1 : 0}`,
+                                }}
+                              >
+                                star
+                              </span>
+                            </button>
+                          </div>
+                          <span className="font-mono text-[11px] text-outline tabular-nums">
+                            {formatDuration(item.durationSeconds)} · {item.wordCount} words · {item.engine}
+                          </span>
+                          <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed">
+                            {item.content}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-outline-variant">
+                          <span className="px-2 py-0.5 rounded-full bg-surface-container text-[11px] text-secondary">
+                            {item.detectedLanguages[0] || item.language}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void speakText(item.content, item.language, { rate: ttsRate })
+                              }
+                              className="p-1 rounded bg-surface-container text-secondary hover:bg-surface-bright cursor-pointer"
+                              title="Listen (TTS)"
+                            >
+                              <span className="material-symbols-outlined text-sm">volume_up</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModalMode("edit");
+                                setEditingItem(item);
+                                setModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-bright text-[11px] font-medium cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(item.id)}
+                              className="p-1 rounded bg-surface-container text-error hover:bg-error-container hover:text-on-error-container cursor-pointer"
+                              title="Delete"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
             </>
           ) : (
             <HistoryDashboard

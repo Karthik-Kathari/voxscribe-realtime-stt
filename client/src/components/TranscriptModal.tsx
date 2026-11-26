@@ -1,15 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Check,
-  Copy,
-  Download,
-  Save,
-  Star,
-  Volume2,
-  VolumeX,
-  X,
-} from "lucide-react";
-import {
   LANGUAGE_OPTIONS,
   formatDuration,
   type Transcription,
@@ -133,71 +123,93 @@ export function TranscriptModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 p-4 backdrop-blur-xs">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#ece9e2] px-6 py-4">
+    <div
+      className="fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editModalTitle"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface-container border border-outline-variant"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-outline-variant">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-900">
-              {mode === "create" ? "New Voice Note" : "Edit Transcription"}
+            <h2
+              id="editModalTitle"
+              className="font-headline text-lg font-semibold text-on-surface"
+            >
+              {mode === "create" ? "New Note" : "Edit Transcription"}
             </h2>
             {initial && (
-              <p className="mt-0.5 font-mono text-[11px] text-stone-500">
-                {initial.engine} &middot; {initial.wordCount} words &middot;{" "}
+              <p className="mt-0.5 font-mono text-xs text-outline tabular-nums">
+                {initial.engine} · {initial.wordCount} words ·{" "}
                 {formatDuration(initial.durationSeconds)}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setIsFavorite((v) => !v)}
-              className={`rounded-md p-1.5 transition ${
-                isFavorite
-                  ? "bg-amber-50 text-amber-500"
-                  : "text-stone-400 hover:bg-stone-100 hover:text-zinc-800"
+              aria-label="Toggle star"
+              className={`w-8 h-8 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center cursor-pointer ${
+                isFavorite ? "text-warning" : "text-outline hover:text-warning"
               }`}
-              title="Star note"
             >
-              <Star className={`h-4 w-4 ${isFavorite ? "fill-amber-500" : ""}`} />
+              <span
+                className="material-symbols-outlined text-base"
+                style={{ fontVariationSettings: `'FILL' ${isFavorite ? 1 : 0}` }}
+              >
+                star
+              </span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-zinc-900"
+              aria-label="Close edit dialog"
+              className="w-8 h-8 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-bright flex items-center justify-center cursor-pointer"
             >
-              <X className="h-4 w-4" />
+              <span className="material-symbols-outlined text-base" aria-hidden="true">
+                close
+              </span>
             </button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 space-y-4 overflow-y-auto p-6">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 space-y-4 overflow-y-auto p-6"
+        >
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            <div className="rounded-lg bg-error-container border border-error px-3.5 py-2 text-xs text-on-error-container">
               {error}
             </div>
           )}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-stone-700">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-on-surface-variant">
                 Title
-              </label>
+              </span>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Auto-generated if left blank..."
-                className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] px-3 py-2 text-sm text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
+                className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3.5 py-2 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-stone-700">
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-on-surface-variant">
                 Language Mode
-              </label>
+              </span>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className="w-full rounded-lg border border-[#d8d4ca] bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:outline-none"
+                className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3.5 py-2 text-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
               >
                 {LANGUAGE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -205,14 +217,14 @@ export function TranscriptModal({
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
 
-          <div>
-            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-medium text-stone-700">
-                Transcript Text
-              </label>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-on-surface-variant">
+                Transcript
+              </span>
               <div className="flex flex-wrap items-center gap-1.5">
                 {isTtsSupported() && content.trim() && (
                   <>
@@ -224,88 +236,74 @@ export function TranscriptModal({
                     <button
                       type="button"
                       onClick={toggleSpeak}
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium ${
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium cursor-pointer ${
                         speaking
-                          ? "border-red-200 bg-red-50 text-red-700"
-                          : "border-[#d8d4ca] bg-white text-zinc-800 hover:bg-stone-50"
+                          ? "bg-error-container border-error text-on-error-container"
+                          : "bg-surface-container-lowest border-outline-variant text-secondary hover:text-on-surface"
                       }`}
                     >
-                      {speaking ? (
-                        <>
-                          <VolumeX className="h-3 w-3" />
-                          <span>Stop</span>
-                        </>
-                      ) : (
-                        <>
-                          <Volume2 className="h-3 w-3" />
-                          <span>Read Aloud</span>
-                        </>
-                      )}
+                      <span className="material-symbols-outlined text-sm">
+                        {speaking ? "stop_circle" : "volume_up"}
+                      </span>
+                      <span>{speaking ? "Stop" : "Listen"}</span>
                     </button>
                   </>
                 )}
                 <button
                   type="button"
-                  onClick={handleCopy}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#d8d4ca] bg-white px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-stone-50"
+                  onClick={() => void handleCopy()}
+                  className="inline-flex items-center gap-1 rounded-lg bg-surface-container-lowest border border-outline-variant px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:text-on-surface cursor-pointer"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-600" />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      <span>Copy</span>
-                    </>
-                  )}
+                  <span className="material-symbols-outlined text-sm">
+                    {copied ? "check" : "content_copy"}
+                  </span>
+                  <span>{copied ? "Copied" : "Copy"}</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleExportTxt}
-                  className="inline-flex items-center gap-1 rounded-md border border-[#d8d4ca] bg-white px-2 py-1 text-[11px] font-medium text-zinc-800 hover:bg-stone-50"
+                  className="inline-flex items-center gap-1 rounded-lg bg-surface-container-lowest border border-outline-variant px-2.5 py-1 text-xs font-medium text-on-surface-variant hover:text-on-surface cursor-pointer"
                 >
-                  <Download className="h-3 w-3" />
                   <span>.TXT</span>
                 </button>
               </div>
             </div>
+
             <textarea
               rows={6}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Enter or edit multilingual transcript text (Hindi, English, Hinglish...)"
-              className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] p-3 text-sm leading-relaxed text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
+              placeholder="Enter or edit multilingual transcript text..."
+              className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3.5 py-2.5 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none leading-relaxed"
               required
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-stone-700">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-on-surface-variant">
               Notes / Context
-            </label>
+            </span>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional meeting notes or context..."
-              className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] p-3 text-sm text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
+              className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3.5 py-2 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
             />
-          </div>
+          </label>
 
           {initial && initial.segments && initial.segments.length > 0 && (
             <div>
-              <p className="mb-1.5 text-xs font-medium text-stone-500">
+              <p className="mb-1.5 text-xs font-medium text-outline">
                 Captured Segments ({initial.segments.length})
               </p>
-              <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-lg border border-[#e5e2da] bg-[#faf9f5] p-3">
+              <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest p-3">
                 {initial.segments.map((seg) => (
                   <div
                     key={seg.id}
-                    className="flex items-start gap-2.5 text-xs text-zinc-700"
+                    className="flex items-start gap-2.5 text-xs text-on-surface-variant"
                   >
-                    <span className="shrink-0 font-mono text-[11px] text-stone-400">
+                    <span className="shrink-0 font-mono text-[11px] text-outline">
                       {seg.timestamp}
                     </span>
                     <span className="flex-1">{seg.text}</span>
@@ -315,21 +313,20 @@ export function TranscriptModal({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2.5 border-t border-[#ece9e2] pt-4">
+          <div className="flex items-center justify-end gap-3 pt-2 border-t border-outline-variant">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-[#d8d4ca] bg-white px-4 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50"
+              className="px-4 py-2 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant hover:bg-surface-bright text-xs font-medium cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-50"
+              className="px-5 py-2 rounded-lg bg-primary-container text-on-primary-container hover:bg-inverse-primary text-xs font-medium disabled:opacity-50 cursor-pointer"
             >
-              <Save className="h-3.5 w-3.5" />
-              <span>{saving ? "Saving..." : "Save Note"}</span>
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>

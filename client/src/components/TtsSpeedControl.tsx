@@ -1,4 +1,4 @@
-import { Gauge, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 interface TtsSpeedControlProps {
   rate: number;
@@ -15,14 +15,11 @@ export function TtsSpeedControl({
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-lg border border-[#e5e2da] bg-[#faf9f5] ${
-        compact ? "px-2 py-0.5" : "px-2.5 py-1"
+      className={`inline-flex items-center gap-2 rounded-lg bg-surface-container-lowest border border-outline-variant ${
+        compact ? "px-2 py-1" : "px-3 py-1.5"
       }`}
     >
-      <Gauge className="h-3.5 w-3.5 shrink-0 text-stone-500" />
-      {!compact && (
-        <span className="text-[11px] font-medium text-stone-600">Speed</span>
-      )}
+      <span className="text-xs font-medium text-outline">Speed</span>
       <input
         type="range"
         min="0.6"
@@ -30,13 +27,13 @@ export function TtsSpeedControl({
         step="0.1"
         value={rate}
         onChange={(e) => onChange(Number(e.target.value))}
-        className={`h-1.5 cursor-pointer accent-zinc-900 ${
+        className={`cursor-pointer accent-primary-container ${
           compact ? "w-14" : "w-20"
         }`}
         title="Adjust Read Aloud TTS speed ([ slower, ] faster)"
         aria-label="TTS playback speed"
       />
-      <span className="w-8 text-right font-mono text-[11px] font-medium text-zinc-800">
+      <span className="w-9 text-right font-mono text-xs font-medium text-on-surface tabular-nums">
         {rate.toFixed(1)}x
       </span>
       <button
@@ -47,13 +44,12 @@ export function TtsSpeedControl({
         aria-label="Reset TTS speed to 1.0x"
         className={`rounded p-0.5 transition ${
           isDefault
-            ? "cursor-default text-stone-300"
-            : "text-stone-600 hover:bg-stone-200/70 hover:text-zinc-900"
+            ? "cursor-default text-outline-variant"
+            : "text-secondary hover:bg-surface-container-high hover:text-on-surface cursor-pointer"
         }`}
       >
-        <RotateCcw className="h-3 w-3" />
+        <RotateCcw className="h-3.5 w-3.5" />
       </button>
     </div>
   );
 }
-

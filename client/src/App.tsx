@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Header } from "./components/Header";
+import { StudioFooter } from "./components/Footer";
+import { Header, type AppView } from "./components/Header";
 import { HistoryDashboard } from "./components/HistoryDashboard";
+import { LandingPage } from "./components/LandingPage";
 import { LiveTranscriber } from "./components/LiveTranscriber";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatsBar } from "./components/StatsBar";
@@ -27,7 +29,22 @@ import type {
   TranscriptionStats,
 } from "./types";
 
+function resolveViewFromPath(pathname: string): AppView {
+  if (pathname.startsWith("/studio")) return "studio";
+  if (pathname.startsWith("/history")) return "history";
+  return "landing";
+}
+
+function viewToPath(view: AppView): string {
+  if (view === "studio") return "/studio";
+  if (view === "history") return "/history";
+  return "/";
+}
+
 export function App() {
+  const [view, setView] = useState<AppView>(() =>
+    resolveViewFromPath(window.location.pathname)
+  );
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [stats, setStats] = useState<TranscriptionStats | null>(null);
   const [items, setItems] = useState<Transcription[]>([]);
@@ -53,6 +70,23 @@ export function App() {
   const ttsRateRef = useRef(ttsRate);
   ttsRateRef.current = ttsRate;
 
+  const navigate = useCallback((nextView: AppView) => {
+    setView(nextView);
+    const targetPath = viewToPath(nextView);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, "", targetPath);
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setView(resolveViewFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   const handleTtsRateChange = useCallback((nextRate: number) => {
     const clamped = Math.min(1.8, Math.max(0.6, Number(nextRate.toFixed(1))));
     setTtsRate(clamped);
@@ -60,15 +94,16 @@ export function App() {
     setLivePlaybackRate(clamped);
   }, []);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 2800);
-  };
+    window.setTimeout(() => setToast(null), 2600);
+  }, []);
 
-  // Global app shortcuts: ? (Shortcuts), [ / ] (TTS speed), 0 (Reset speed), N (New Note), / (Search), Esc (Close/Stop)
+  // Global keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+
       if (e.key === "Escape") {
         if (shortcutsOpen) {
           setShortcutsOpen(false);
@@ -108,20 +143,25 @@ export function App() {
       } else if (e.key === "0") {
         e.preventDefault();
         handleTtsRateChange(1.0);
-      } else if (e.key.toLowerCase() === "n") {
+      } else if (e.key.toLowerCase() === "n" && view !== "landing") {
         e.preventDefault();
         setModalMode("create");
         setEditingItem(null);
         setModalOpen(true);
       } else if (e.key === "/") {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        if (view !== "history") {
+          navigate("history");
+          window.setTimeout(() => searchInputRef.current?.focus(), 60);
+        } else {
+          searchInputRef.current?.focus();
+        }
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [modalOpen, shortcutsOpen, handleTtsRateChange]);
+  }, [modalOpen, shortcutsOpen, view, navigate, handleTtsRateChange]);
 
   const loadHealthAndStats = useCallback(async () => {
     try {
@@ -132,7 +172,7 @@ export function App() {
       setEngineStatus(healthRes);
       setStats(statsRes);
     } catch {
-      // handled gracefully by UI status dots
+      // handled gracefully by header status indicators
     }
   }, []);
 
@@ -150,13 +190,11 @@ export function App() {
       setItems(res.items);
       setTotal(res.total);
     } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Failed to load history"
-      );
+      showToast(err instanceof Error ? err.message : "Failed to load history");
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, languageFilter, engineFilter, favoriteOnly, sortOrder]);
+  }, [searchQuery, languageFilter, engineFilter, favoriteOnly, sortOrder, showToast]);
 
   useEffect(() => {
     void loadHealthAndStats();
@@ -169,9 +207,9 @@ export function App() {
     return () => clearTimeout(timer);
   }, [loadTranscriptions]);
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     await Promise.all([loadTranscriptions(), loadHealthAndStats()]);
-  };
+  }, [loadTranscriptions, loadHealthAndStats]);
 
   const handleSaveFromLive = async (payload: {
     id?: string;
@@ -194,13 +232,12 @@ export function App() {
         });
         showToast("Updated current note in PostgreSQL");
       } catch {
-        // Fallback to creating a new row if the previous note was deleted
         saved = await createTranscription(payload);
-        showToast("Saved note to PostgreSQL");
+        showToast("Saved transcription to PostgreSQL");
       }
     } else {
       saved = await createTranscription(payload);
-      showToast("Saved note to PostgreSQL");
+      showToast("Saved transcription to PostgreSQL");
     }
     await refreshAll();
     return saved;
@@ -222,7 +259,7 @@ export function App() {
         notes: payload.notes,
         isFavorite: payload.isFavorite,
       });
-      showToast("Note updated");
+      showToast("Updated record in PostgreSQL");
     } else {
       await createTranscription({
         title: payload.title || undefined,
@@ -233,7 +270,7 @@ export function App() {
         notes: payload.notes,
         isFavorite: payload.isFavorite,
       });
-      showToast("Note created");
+      showToast("Saved transcription to PostgreSQL");
     }
     await refreshAll();
   };
@@ -246,19 +283,30 @@ export function App() {
   const handleDelete = async (id: string) => {
     await deleteTranscription(id);
     await refreshAll();
-    showToast("Note deleted");
+    showToast("Record deleted");
   };
 
   const handleBulkDelete = async (ids: string[]) => {
     const res = await bulkDeleteTranscriptions(ids);
     await refreshAll();
-    showToast(`Deleted ${res.deletedCount} notes`);
+    showToast(`Deleted ${res.deletedCount} records`);
   };
 
+  if (view === "landing") {
+    return (
+      <LandingPage
+        onNavigateStudio={() => navigate("studio")}
+        onNavigateHistory={() => navigate("history")}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#f5f4ef] text-zinc-900">
+    <div className="min-h-screen flex flex-col bg-surface text-on-surface">
       <Header
+        currentView={view}
         status={engineStatus}
+        onNavigate={navigate}
         onNewManual={() => {
           setModalMode("create");
           setEditingItem(null);
@@ -267,44 +315,53 @@ export function App() {
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
 
-      <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
-        <StatsBar stats={stats} />
-
-        <LiveTranscriber
-          engineStatus={engineStatus}
-          ttsRate={ttsRate}
-          onTtsRateChange={handleTtsRateChange}
-          hotkeyDisabled={modalOpen || shortcutsOpen}
-          onSaveTranscription={handleSaveFromLive}
-        />
-
-        <HistoryDashboard
-          items={items}
-          total={total}
-          loading={loading}
-          ttsRate={ttsRate}
-          onTtsRateChange={handleTtsRateChange}
-          searchInputRef={searchInputRef}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          languageFilter={languageFilter}
-          onLanguageFilterChange={setLanguageFilter}
-          engineFilter={engineFilter}
-          onEngineFilterChange={setEngineFilter}
-          favoriteOnly={favoriteOnly}
-          onFavoriteOnlyChange={setFavoriteOnly}
-          sortOrder={sortOrder}
-          onSortOrderChange={setSortOrder}
-          onEdit={(item) => {
-            setModalMode("edit");
-            setEditingItem(item);
-            setModalOpen(true);
-          }}
-          onToggleFavorite={handleToggleFavorite}
-          onDelete={handleDelete}
-          onBulkDelete={handleBulkDelete}
-        />
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 lg:py-8 pb-20 flex flex-col gap-6">
+        {view === "studio" ? (
+          <>
+            <StatsBar stats={stats} />
+            <LiveTranscriber
+              engineStatus={engineStatus}
+              ttsRate={ttsRate}
+              onTtsRateChange={handleTtsRateChange}
+              hotkeyDisabled={modalOpen || shortcutsOpen}
+              onSaveTranscription={handleSaveFromLive}
+              onToast={showToast}
+            />
+          </>
+        ) : (
+          <HistoryDashboard
+            items={items}
+            total={total}
+            loading={loading}
+            ttsRate={ttsRate}
+            onTtsRateChange={handleTtsRateChange}
+            searchInputRef={searchInputRef}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            languageFilter={languageFilter}
+            onLanguageFilterChange={setLanguageFilter}
+            engineFilter={engineFilter}
+            onEngineFilterChange={setEngineFilter}
+            favoriteOnly={favoriteOnly}
+            onFavoriteOnlyChange={setFavoriteOnly}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            onRefresh={refreshAll}
+            onEdit={(item) => {
+              setModalMode("edit");
+              setEditingItem(item);
+              setModalOpen(true);
+            }}
+            onToggleFavorite={handleToggleFavorite}
+            onDelete={handleDelete}
+            onBulkDelete={handleBulkDelete}
+            onGoToStudio={() => navigate("studio")}
+            onToast={showToast}
+          />
+        )}
       </main>
+
+      <StudioFooter />
 
       <TranscriptModal
         open={modalOpen}
@@ -322,7 +379,11 @@ export function App() {
       />
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-white shadow-lg">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 rounded-lg bg-surface-container-high border border-primary px-4 py-2.5 text-xs font-medium text-on-surface shadow-lg"
+        >
           {toast}
         </div>
       )}

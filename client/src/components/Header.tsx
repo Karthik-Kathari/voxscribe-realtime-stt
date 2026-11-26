@@ -1,83 +1,179 @@
-import { Keyboard, Mic, Plus } from "lucide-react";
 import type { EngineStatus } from "../types";
+import { VoxLogo } from "./VoxLogo";
+
+export type AppView = "landing" | "studio" | "history";
 
 interface HeaderProps {
+  currentView: "studio" | "history";
   status: EngineStatus | null;
+  onNavigate: (view: AppView) => void;
   onNewManual: () => void;
   onOpenShortcuts: () => void;
 }
 
 export function Header({
+  currentView,
   status,
+  onNavigate,
   onNewManual,
   onOpenShortcuts,
 }: HeaderProps) {
   return (
-    <header className="border-b border-[#e5e2da] bg-[#f5f4ef]">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-900 bg-zinc-900 text-[#f5f4ef]">
-            <Mic className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="flex items-baseline gap-2.5">
-              <h1 className="text-lg font-bold tracking-tight text-zinc-900">
-                VoxScribe
-              </h1>
-              <span className="text-xs font-medium text-stone-500">
-                Multilingual Voice Notes
+    <header className="sticky top-0 z-40 bg-surface-container-lowest border-b border-outline-variant">
+      <div className="max-w-7xl mx-auto px-4 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => onNavigate("landing")}
+            className="flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg cursor-pointer"
+            title="Back to VoxScribe Home"
+          >
+            <VoxLogo size="sm" />
+            <span className="font-headline text-lg font-semibold text-on-surface">
+              VoxScribe
+            </span>
+          </button>
+
+          {/* Workspace Navigation Tabs */}
+          <nav
+            aria-label="Workspace views"
+            className="hidden sm:flex items-center p-1 rounded-lg bg-surface-container-low border border-outline-variant gap-1"
+          >
+            <button
+              type="button"
+              onClick={() => onNavigate("studio")}
+              aria-current={currentView === "studio" ? "page" : undefined}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-sm text-xs font-medium transition duration-150 cursor-pointer ${
+                currentView === "studio"
+                  ? "bg-surface-container-high text-on-surface"
+                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-base ${
+                  currentView === "studio" ? "text-primary" : ""
+                }`}
+                aria-hidden="true"
+              >
+                graphic_eq
               </span>
-            </div>
-            <p className="text-xs text-stone-500">
-              Real-time Hindi, Kannada, Tamil, Telugu &amp; English transcription in PostgreSQL
-            </p>
-          </div>
+              <span>Studio</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate("history")}
+              aria-current={currentView === "history" ? "page" : undefined}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-sm text-xs font-medium transition duration-150 cursor-pointer ${
+                currentView === "history"
+                  ? "bg-surface-container-high text-on-surface"
+                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-base ${
+                  currentView === "history" ? "text-primary" : ""
+                }`}
+                aria-hidden="true"
+              >
+                library_books
+              </span>
+              <span>History Library</span>
+            </button>
+          </nav>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="hidden items-center gap-4 pr-1 text-xs text-stone-600 md:flex">
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  status?.databaseConnected ? "bg-emerald-600" : "bg-amber-500"
-                }`}
-              />
-              {status?.databaseConnected ? "Postgres connected" : "Checking DB"}
+        <div className="flex items-center gap-2.5">
+          <span
+            className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low border border-outline-variant text-xs font-medium ${
+              status?.databaseConnected ? "text-success" : "text-warning"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                status?.databaseConnected ? "bg-success" : "bg-warning"
+              }`}
+              aria-hidden="true"
+            />
+            <span>
+              {status?.databaseConnected ? "Postgres Connected" : "Checking DB"}
             </span>
-            <span className="text-stone-300">|</span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  status?.geminiConfigured ? "bg-emerald-600" : "bg-stone-400"
-                }`}
-              />
-              {status?.geminiConfigured ? "Gemini Audio Ready" : "Gemini key unset"}
+          </span>
+
+          <span
+            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low border border-outline-variant text-xs font-medium ${
+              status?.geminiConfigured ? "text-secondary" : "text-outline"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                status?.geminiConfigured ? "bg-secondary" : "bg-outline"
+              }`}
+              aria-hidden="true"
+            />
+            <span>
+              {status?.geminiConfigured
+                ? "Gemini Audio Ready"
+                : "Gemini Key Unset"}
             </span>
-          </div>
+          </span>
 
           <button
             type="button"
             onClick={onOpenShortcuts}
             title="Keyboard shortcuts (?)"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition hover:border-stone-400 hover:bg-stone-50 hover:text-zinc-900"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant text-on-surface-variant hover:text-on-surface hover:bg-surface-container text-xs font-medium transition duration-150 cursor-pointer"
           >
-            <Keyboard className="h-3.5 w-3.5" />
+            <span
+              className="material-symbols-outlined text-base"
+              aria-hidden="true"
+            >
+              keyboard
+            </span>
             <span className="hidden sm:inline">Shortcuts</span>
-            <kbd className="rounded border border-[#e2dfd7] bg-[#faf9f5] px-1 py-0.2 font-mono text-[10px] text-stone-500">
-              ?
-            </kbd>
           </button>
 
           <button
             type="button"
             onClick={onNewManual}
             title="Create new manual note (N)"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition hover:bg-zinc-800"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary-container text-on-primary-container hover:bg-inverse-primary text-xs font-medium transition duration-150 cursor-pointer"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <span
+              className="material-symbols-outlined text-base"
+              aria-hidden="true"
+            >
+              add
+            </span>
             <span>New Note</span>
           </button>
         </div>
+      </div>
+
+      {/* Mobile Nav Row */}
+      <div className="sm:hidden border-t border-outline-variant px-4 py-2 flex items-center gap-2 bg-surface-container-low">
+        <button
+          type="button"
+          onClick={() => onNavigate("studio")}
+          className={`flex-1 text-center py-1.5 rounded-sm text-xs font-medium ${
+            currentView === "studio"
+              ? "bg-surface-container-high text-on-surface"
+              : "text-on-surface-variant"
+          }`}
+        >
+          Studio
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("history")}
+          className={`flex-1 text-center py-1.5 rounded-sm text-xs font-medium ${
+            currentView === "history"
+              ? "bg-surface-container-high text-on-surface"
+              : "text-on-surface-variant"
+          }`}
+        >
+          History Library
+        </button>
       </div>
     </header>
   );

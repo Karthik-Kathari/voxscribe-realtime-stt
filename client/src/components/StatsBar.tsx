@@ -7,33 +7,45 @@ interface StatsBarProps {
 export function StatsBar({ stats }: StatsBarProps) {
   const items = [
     {
-      label: "Notes saved",
+      label: "NOTES SAVED",
       value: stats ? String(stats.totalCount) : "—",
+      accent: "text-on-surface",
     },
     {
-      label: "Words captured",
+      label: "WORDS CAPTURED",
       value: stats ? stats.totalWords.toLocaleString() : "—",
+      accent: "text-on-surface",
     },
     {
-      label: "Audio recorded",
+      label: "AUDIO RECORDED",
       value: stats ? formatDuration(stats.totalDurationSeconds) : "—",
+      accent: "text-on-surface",
     },
     {
-      label: "Starred",
+      label: "STARRED",
       value: stats ? String(stats.favoriteCount) : "—",
+      accent: "text-secondary",
     },
   ];
 
   return (
-    <section className="grid grid-cols-2 divide-y divide-[#e5e2da] overflow-hidden rounded-xl border border-[#e5e2da] bg-white sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+    <section
+      aria-label="Workspace summary"
+      className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+    >
       {items.map((item) => (
-        <div key={item.label} className="px-4 py-3 sm:px-5">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-stone-500">
+        <div
+          key={item.label}
+          className="rounded-xl bg-surface-container-low border border-outline-variant px-4 py-3 flex flex-col gap-1"
+        >
+          <span className="text-xs font-medium tracking-wide text-outline">
             {item.label}
-          </p>
-          <p className="mt-0.5 font-mono text-lg font-medium text-zinc-900">
+          </span>
+          <span
+            className={`font-headline text-[22px] leading-7 font-semibold tabular-nums ${item.accent}`}
+          >
             {item.value}
-          </p>
+          </span>
         </div>
       ))}
     </section>

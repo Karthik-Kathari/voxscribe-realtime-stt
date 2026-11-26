@@ -1,15 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertCircle,
-  FilePlus2,
-  Mic,
-  Play,
-  RotateCcw,
-  Save,
-  Square,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
 import { startPcmCapture, type AudioCaptureHandle } from "../lib/audio";
 import { isTtsSupported, speakText, stopSpeaking } from "../lib/tts";
 import {
@@ -49,6 +38,7 @@ interface LiveTranscriberProps {
     durationSeconds: number;
     segments: TranscriptSegment[];
   }) => Promise<Transcription>;
+  onToast: (msg: string) => void;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -79,6 +69,7 @@ export function LiveTranscriber({
   onTtsRateChange,
   hotkeyDisabled = false,
   onSaveTranscription,
+  onToast,
 }: LiveTranscriberProps) {
   const [engine, setEngine] = useState<SttEngine>("gemini-live-3.1");
   const [language, setLanguage] = useState<string>("hi-en");
@@ -96,17 +87,19 @@ export function LiveTranscriber({
   const [interimText, setInterimText] = useState("");
   const [editedText, setEditedText] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [waveform, setWaveform] = useState<number[]>(() => Array(28).fill(10));
+  const [waveform, setWaveform] = useState<number[]>(() => Array(28).fill(12));
   const [error, setError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<string>(
-    "Ready. Press Space or click Record to speak in any supported language."
+    "Ready. Press Space or click Start Recording to speak in any supported language."
   );
   const [saving, setSaving] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioRef = useRef<AudioCaptureHandle | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const demoTimerRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const isRecordingRef = useRef(false);
   const isConnectingRef = useRef(false);
@@ -207,8 +200,15 @@ export function LiveTranscriber({
     }
   };
 
+  const stopDemoStream = () => {
+    if (demoTimerRef.current !== null) {
+      clearInterval(demoTimerRef.current);
+      demoTimerRef.current = null;
+    }
+  };
+
   const pushWaveformLevel = (rms: number) => {
-    const height = Math.min(100, Math.max(10, Math.round(rms * 460)));
+    const height = Math.min(100, Math.max(12, Math.round(rms * 460)));
     setWaveform((prev) => [...prev.slice(1), height]);
   };
 
@@ -234,7 +234,8 @@ export function LiveTranscriber({
     isRecordingRef.current = false;
     isConnectingRef.current = false;
     stopTimer();
-    setWaveform(Array(28).fill(10));
+    stopDemoStream();
+    setWaveform(Array(28).fill(12));
 
     if (audioRef.current) {
       try {
@@ -393,8 +394,8 @@ export function LiveTranscriber({
       earlyPcmQueue.length = 0;
       setError(
         micErr instanceof Error
-          ? `Microphone access failed: ${micErr.message}`
-          : "Microphone permission denied."
+          ? `Microphone access unavailable (${micErr.message}). Use "Demo Speech" or allow microphone permission.`
+          : 'Microphone permission denied. Use "Demo Speech" or allow mic access.'
       );
       isConnectingRef.current = false;
       setIsConnecting(false);
@@ -412,7 +413,7 @@ export function LiveTranscriber({
 
     if (!SpeechRec) {
       setError(
-        "Browser Web Speech API is unavailable here. Use Chrome/Edge or Gemini."
+        "Browser Web Speech API is unavailable here. Use Chrome/Edge or Gemini AI."
       );
       return;
     }
@@ -492,7 +493,6 @@ export function LiveTranscriber({
       resetSessionState();
       initialElapsed = 0;
     } else if (editedTextRef.current !== null) {
-      // Preserve any manual edits made before continuing
       const edited = editedTextRef.current.trim();
       const carriedSegments: TranscriptSegment[] = edited
         ? [
@@ -528,7 +528,6 @@ export function LiveTranscriber({
       Boolean(interimRef.current.trim()) ||
       Boolean(editedTextRef.current?.trim());
 
-    // If there's an already-saved note in the studio, follow the user's preference
     if (hasExistingContent && activeRecordIdRef.current) {
       if (nextBehaviorRef.current === "ask") {
         setShowContinuePrompt(true);
@@ -542,6 +541,36 @@ export function LiveTranscriber({
     await beginRecording("continue");
   };
 
+  const handleDemoSpeech = () => {
+    if (isRecordingRef.current || isConnectingRef.current) return;
+    resetSessionState();
+    setError(null);
+    isRecordingRef.current = true;
+    setIsRecording(true);
+    startTimer(0);
+    setStatusNote(`Simulating live ${activeLanguageConfig.label} speech...`);
+
+    const words = activeLanguageConfig.sample.split(" ");
+    let idx = 0;
+    stopDemoStream();
+    demoTimerRef.current = window.setInterval(() => {
+      if (!isRecordingRef.current || idx >= words.length) {
+        stopDemoStream();
+        if (isRecordingRef.current) {
+          void handleStop(true);
+        }
+        return;
+      }
+      const nextWord = words[idx++];
+      const nextInterim = (
+        interimRef.current ? `${interimRef.current} ${nextWord}` : nextWord
+      ).trim();
+      interimRef.current = nextInterim;
+      setInterimText(nextInterim);
+      pushWaveformLevel(0.16 + Math.random() * 0.24);
+    }, 190);
+  };
+
   const handleStop = async (triggerAutoSave = true) => {
     const currentDuration = elapsedRef.current;
 
@@ -550,7 +579,8 @@ export function LiveTranscriber({
     setIsRecording(false);
     setIsConnecting(false);
     stopTimer();
-    setWaveform(Array(28).fill(10));
+    stopDemoStream();
+    setWaveform(Array(28).fill(12));
 
     if (audioRef.current) {
       try {
@@ -663,11 +693,36 @@ export function LiveTranscriber({
     setShowContinuePrompt(false);
     showPromptRef.current = false;
     resetSessionState();
-    setStatusNote("New session ready. Press Space or click Record to start.");
+    setStatusNote("Started a fresh session. Press Space or click Start Recording.");
+  };
+
+  const handleClearText = () => {
+    if (isRecording) return;
+    segmentsRef.current = [];
+    interimRef.current = "";
+    editedTextRef.current = null;
+    setSegments([]);
+    setInterimText("");
+    setEditedText(null);
+    onToast("Transcript cleared");
+  };
+
+  const handleCopy = async () => {
+    if (!combinedText) {
+      onToast("Nothing to copy yet");
+      return;
+    }
+    await navigator.clipboard.writeText(combinedText);
+    setCopied(true);
+    onToast("Transcription copied to clipboard");
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
   const handleTtsPreview = () => {
-    if (!combinedText) return;
+    if (!combinedText) {
+      onToast("Record or type text to listen");
+      return;
+    }
     if (speaking) {
       stopSpeaking();
       setSpeaking(false);
@@ -696,7 +751,6 @@ export function LiveTranscriber({
     const onKeyDown = (e: KeyboardEvent) => {
       if (hotkeyDisabled) return;
 
-      // Handle quick choices inside the inline Continue vs New Session prompt
       if (showPromptRef.current) {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -777,147 +831,193 @@ export function LiveTranscriber({
     },
   ];
 
+  const activeEngineLabel =
+    engineTabs.find((t) => t.id === engine)?.label ?? "Gemini AI";
   const hasSavedActiveNote = Boolean(activeRecordId && combinedText);
 
   return (
-    <section className="overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-      {/* Toolbar Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ece9e2] px-5 py-3.5 sm:px-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">
-              Voice Recorder
-            </h2>
-            {activeRecordId && (
-              <span className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                Synced to DB
-              </span>
-            )}
+    <div className="flex flex-col gap-5">
+      {/* Error / Permission Banner */}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-xl bg-error-container border border-error px-4 py-3 flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="material-symbols-outlined text-lg text-on-error-container"
+              aria-hidden="true"
+            >
+              mic_off
+            </span>
+            <p className="text-sm text-on-error-container">{error}</p>
           </div>
-          <p className="text-xs text-stone-500">{statusNote}</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex rounded-lg border border-[#e5e2da] bg-[#f5f4ef] p-0.5">
-            {engineTabs.map((tab) => {
-              const active = engine === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  disabled={isRecording}
-                  onClick={() => setEngine(tab.id)}
-                  title={
-                    tab.available
-                      ? tab.label
-                      : `${tab.label} is not configured in .env`
-                  }
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed ${
-                    active
-                      ? "bg-white text-zinc-900 shadow-xs"
-                      : "text-stone-600 hover:text-zinc-900"
-                  } ${!tab.available && !active ? "opacity-55" : ""}`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <select
-            value={language}
-            disabled={isRecording}
-            onChange={(e) => setLanguage(e.target.value)}
-            className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 focus:border-zinc-900 focus:outline-none disabled:opacity-60"
-            aria-label="Transcription language"
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="px-3 py-1 rounded-lg bg-surface-container-lowest text-on-surface text-xs font-medium cursor-pointer"
           >
-            {LANGUAGE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-stone-600 select-none">
-            <input
-              type="checkbox"
-              checked={autoSave}
-              onChange={(e) => setAutoSave(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-stone-300 accent-zinc-900"
-            />
-            <span>Auto-save</span>
-          </label>
+            Dismiss
+          </button>
         </div>
-      </div>
+      )}
 
-      {/* Studio Body */}
-      <div className="space-y-4 p-5 sm:p-6">
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-            <span>{error}</span>
+      {/* Primary Transcription Studio Workspace */}
+      <section className="rounded-2xl bg-surface-container-low border border-outline-variant p-5 lg:p-6 flex flex-col gap-5">
+        {/* Studio Top Controls */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-outline-variant">
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="font-headline text-lg font-semibold text-on-surface">
+                Voice Recorder Studio
+              </h1>
+              <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant text-xs font-medium text-secondary whitespace-nowrap">
+                Free &amp; Open Source
+              </span>
+              {activeRecordId && (
+                <span className="px-2 py-0.5 rounded-full bg-surface-container border border-outline-variant text-xs font-medium text-success whitespace-nowrap">
+                  Synced to DB
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-on-surface-variant">{statusNote}</p>
           </div>
-        )}
 
-        {/* Record Bar */}
-        <div className="space-y-3 rounded-xl border border-[#e5e2da] bg-[#faf9f5] px-4 py-3.5">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3.5">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Engine Segmented Switcher */}
+            <div
+              role="tablist"
+              aria-label="Speech Recognition Engine"
+              className="inline-flex flex-wrap items-center p-1 rounded-lg bg-surface-container-lowest border border-outline-variant gap-1"
+            >
+              {engineTabs.map((tab) => {
+                const active = engine === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    disabled={isRecording}
+                    onClick={() => setEngine(tab.id)}
+                    title={
+                      tab.available
+                        ? tab.label
+                        : `${tab.label} is not configured in .env`
+                    }
+                    className={`px-3 py-1.5 rounded-sm text-xs font-medium whitespace-nowrap transition duration-150 cursor-pointer disabled:cursor-not-allowed ${
+                      active
+                        ? "bg-primary-container text-on-primary-container"
+                        : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                    } ${!tab.available && !active ? "opacity-55" : ""}`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Language Dropdown */}
+            <select
+              value={language}
+              disabled={isRecording}
+              onChange={(e) => setLanguage(e.target.value)}
+              aria-label="Transcription language"
+              className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3 py-1.5 text-xs font-medium text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none disabled:opacity-60"
+            >
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Auto-save Toggle */}
+            <label className="inline-flex items-center gap-2 cursor-pointer select-none px-2.5 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant">
+              <input
+                type="checkbox"
+                checked={autoSave}
+                onChange={(e) => setAutoSave(e.target.checked)}
+                className="rounded border-outline-variant bg-surface-container accent-primary-container"
+              />
+              <span className="text-xs font-medium text-on-surface">
+                Auto-save
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* Recording Control Bar & Live Waveform */}
+        <div className="rounded-xl bg-surface-container-lowest border border-outline-variant p-4 lg:p-5 flex flex-col gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex flex-wrap items-center gap-4">
               {!isRecording ? (
                 <button
                   type="button"
                   disabled={isConnecting}
                   onClick={() => void handleRecordTrigger()}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
+                  aria-label="Start recording"
                   title="Start or resume recording (Space)"
+                  className="w-14 h-14 rounded-full bg-recording text-on-recording flex items-center justify-center hover:opacity-90 active:scale-95 transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 cursor-pointer"
                 >
-                  <Mic className="h-5 w-5" />
+                  <span
+                    className="material-symbols-outlined text-2xl"
+                    aria-hidden="true"
+                  >
+                    mic
+                  </span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => void handleStop(true)}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:bg-zinc-800 active:scale-95"
+                  aria-label="Stop recording"
                   title="Stop recording (Space)"
+                  className="w-14 h-14 rounded-full bg-recording text-on-recording flex items-center justify-center hover:opacity-90 active:scale-95 transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer shadow-[0_0_0_4px_rgba(239,68,68,0.2)]"
                 >
-                  <Square className="h-4 w-4 fill-current" />
+                  <span
+                    className="material-symbols-outlined text-2xl"
+                    aria-hidden="true"
+                  >
+                    stop
+                  </span>
                 </button>
               )}
 
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-zinc-900">
+              <div className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="font-headline text-base font-semibold text-on-surface">
                     {isConnecting
                       ? "Connecting..."
                       : isRecording
-                        ? "Recording"
+                        ? "Recording Live..."
                         : hasSavedActiveNote
                           ? "Resume or New Session"
                           : "Start Recording"}
                   </span>
-                  <span className="rounded border border-[#e2dfd7] bg-white px-2 py-0.5 font-mono text-xs text-zinc-700">
+                  <span className="px-2 py-0.5 rounded bg-surface-container border border-outline-variant font-mono text-xs text-on-surface tabular-nums">
                     {formatDuration(elapsedSeconds)}
                   </span>
-                  <kbd className="hidden items-center rounded border border-[#d8d4ca] bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-500 sm:inline-flex">
+                  <kbd className="hidden sm:inline-block px-2 py-0.5 rounded bg-surface-container border border-outline-variant font-mono text-xs text-outline">
                     Space
                   </kbd>
                 </div>
-                <p className="mt-0.5 text-xs text-stone-500">
+                <p className="text-xs text-outline">
                   Try:{" "}
-                  <span className="italic text-stone-600">
+                  <span className="italic text-on-surface-variant">
                     &ldquo;{activeLanguageConfig.sample}&rdquo;
                   </span>
                 </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
-              {/* Next mic press behavior selector */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Next Mic Mode */}
               <div
-                className="inline-flex items-center gap-1 rounded-lg border border-[#e2dfd7] bg-white px-2 py-1"
+                className="inline-flex items-center gap-1 p-1 rounded-lg bg-surface-container border border-outline-variant"
                 title="Choose what happens when you press Mic after stopping a saved note"
               >
-                <span className="text-[10px] font-medium text-stone-500">
+                <span className="text-xs font-medium text-outline px-2">
                   Next mic:
                 </span>
                 {(
@@ -932,10 +1032,10 @@ export function LiveTranscriber({
                     type="button"
                     disabled={isRecording}
                     onClick={() => updateNextBehavior(opt.id)}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition ${
+                    className={`px-2.5 py-1 rounded-sm text-xs font-medium transition cursor-pointer ${
                       nextBehavior === opt.id
-                        ? "bg-zinc-900 text-white"
-                        : "text-stone-600 hover:bg-stone-100"
+                        ? "bg-primary-container text-on-primary-container"
+                        : "text-on-surface-variant hover:text-on-surface"
                     }`}
                   >
                     {opt.label}
@@ -943,48 +1043,68 @@ export function LiveTranscriber({
                 ))}
               </div>
 
-              <div className="flex h-9 items-center gap-1">
+              {/* Live Waveform Visualizer */}
+              <div className="w-48 sm:w-52 h-10 rounded-lg bg-surface-container border border-outline-variant px-3 flex items-center justify-between gap-0.5 overflow-hidden">
                 {waveform.map((h, i) => (
                   <span
                     key={i}
                     style={{ height: `${h}%` }}
                     className={`w-1 rounded-full transition-all duration-75 ${
-                      isRecording ? "bg-red-600" : "bg-[#d6d2c8]"
+                      isRecording
+                        ? i % 2 === 0
+                          ? "bg-primary"
+                          : "bg-secondary"
+                        : "bg-outline-variant"
                     }`}
                   />
                 ))}
               </div>
+
+              {/* Demo Speech Simulator */}
+              <button
+                type="button"
+                disabled={isRecording || isConnecting}
+                onClick={handleDemoSpeech}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container-high border border-outline-variant text-secondary hover:bg-surface-bright text-xs font-medium transition duration-150 disabled:opacity-40 cursor-pointer"
+                title="Simulate live speech input without a microphone"
+              >
+                <span
+                  className="material-symbols-outlined text-base"
+                  aria-hidden="true"
+                >
+                  play_arrow
+                </span>
+                <span>Demo Speech</span>
+              </button>
             </div>
           </div>
 
           {/* Inline Continue vs Start New Session Prompt */}
           {showContinuePrompt && !isRecording && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/80 bg-amber-50/70 px-3.5 py-2.5">
-              <p className="text-xs font-medium text-zinc-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary bg-surface-container px-4 py-3">
+              <p className="text-xs font-medium text-on-surface">
                 This note is already saved. Do you want to{" "}
-                <strong>continue adding</strong> to it or{" "}
-                <strong>start a new session</strong>?
+                <strong className="text-secondary">continue adding</strong> to
+                it or <strong className="text-primary">start a new session</strong>?
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => void beginRecording("continue")}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary-container px-3 py-1.5 text-xs font-medium text-on-primary-container hover:bg-inverse-primary transition cursor-pointer"
                 >
-                  <Play className="h-3 w-3 fill-current" />
                   <span>Continue Note</span>
-                  <kbd className="rounded bg-zinc-700 px-1 text-[10px] text-zinc-200">
+                  <kbd className="rounded bg-surface-container-lowest/40 px-1 font-mono text-[10px]">
                     C
                   </kbd>
                 </button>
                 <button
                   type="button"
                   onClick={() => void beginRecording("new")}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-stone-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-surface-container-high border border-outline-variant px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-bright transition cursor-pointer"
                 >
-                  <FilePlus2 className="h-3.5 w-3.5" />
                   <span>New Session</span>
-                  <kbd className="rounded border border-stone-200 bg-stone-50 px-1 text-[10px] text-stone-500">
+                  <kbd className="rounded bg-surface-container-lowest px-1 font-mono text-[10px] text-outline">
                     N
                   </kbd>
                 </button>
@@ -994,7 +1114,7 @@ export function LiveTranscriber({
                     setShowContinuePrompt(false);
                     showPromptRef.current = false;
                   }}
-                  className="px-2 py-1 text-xs text-stone-500 hover:text-zinc-900"
+                  className="px-2 py-1 text-xs text-outline hover:text-on-surface cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -1003,138 +1123,187 @@ export function LiveTranscriber({
           )}
         </div>
 
-        {/* Title + Live / Editable Transcript */}
-        <div className="space-y-2.5">
+        {/* Note Title & Live Transcription Canvas */}
+        <div className="flex flex-col gap-3">
+          <label htmlFor="noteTitleInput" className="sr-only">
+            Note title
+          </label>
           <input
+            id="noteTitleInput"
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Note title (optional — auto-generated from your first words)"
-            className="w-full rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-3.5 py-2 text-xs text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
+            className="w-full rounded-lg bg-surface-container-lowest border border-outline-variant px-4 py-2.5 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
           />
 
-          <div className="min-h-[140px] rounded-xl border border-[#e5e2da] bg-[#faf9f5] p-4">
+          <div className="rounded-xl bg-surface-container-lowest border border-outline-variant p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between border-b border-outline-variant pb-2.5">
+              <span className="inline-flex items-center gap-1.5 font-mono text-xs text-secondary">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isRecording ? "bg-recording" : "bg-secondary"
+                  }`}
+                  aria-hidden="true"
+                />
+                <span>
+                  {activeEngineLabel} · {activeLanguageConfig.label}
+                </span>
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopy()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface text-xs font-medium transition cursor-pointer"
+                >
+                  <span
+                    className="material-symbols-outlined text-sm"
+                    aria-hidden="true"
+                  >
+                    {copied ? "check" : "content_copy"}
+                  </span>
+                  <span>{copied ? "Copied" : "Copy"}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isRecording || !combinedText}
+                  onClick={handleClearText}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant text-on-surface-variant hover:text-error text-xs font-medium transition disabled:opacity-40 cursor-pointer"
+                >
+                  <span
+                    className="material-symbols-outlined text-sm"
+                    aria-hidden="true"
+                  >
+                    delete_sweep
+                  </span>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+
             {!isRecording && (segments.length > 0 || editedText !== null) ? (
               <textarea
-                rows={4}
+                rows={7}
                 value={editedText ?? combinedText}
                 onChange={(e) => setEditedText(e.target.value)}
-                placeholder="Edit your captured transcript..."
-                className="w-full resize-y bg-transparent text-sm leading-relaxed text-zinc-900 focus:outline-none"
+                placeholder={`Live words in ${activeLanguageConfig.label} appear here as you speak...`}
+                className="w-full bg-transparent border-0 p-0 text-base text-on-surface placeholder:text-outline focus:ring-0 focus:outline-none resize-y leading-relaxed"
               />
-            ) : segments.length === 0 && !interimText ? (
-              <div className="flex h-24 flex-col items-center justify-center text-center text-xs text-stone-400">
-                <p>
-                  Live words in{" "}
-                  <strong className="font-medium text-stone-600">
-                    {activeLanguageConfig.label}
-                  </strong>{" "}
-                  appear here as you speak.
-                </p>
-                <p className="mt-1 text-[11px] text-stone-400">
-                  Press{" "}
-                  <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">
-                    Space
-                  </kbd>{" "}
-                  to toggle the mic or{" "}
-                  <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">
-                    ?
-                  </kbd>{" "}
-                  for all shortcuts.
-                </p>
-              </div>
             ) : (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
-                {segments.map((s) => s.text).join(" ")}
-                {interimText && (
-                  <span className="ml-1 text-stone-500 underline decoration-stone-400 decoration-dotted underline-offset-4">
-                    {interimText}
-                  </span>
+              <div className="min-h-[168px] flex flex-col justify-between">
+                {segments.length === 0 && !interimText ? (
+                  <p className="text-base text-outline leading-relaxed">
+                    Live words in {activeLanguageConfig.label} appear here as you
+                    speak. Press <kbd className="px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant font-mono text-xs text-on-surface-variant">Space</kbd> to
+                    toggle the mic or click <strong className="text-secondary font-medium">Demo Speech</strong> to preview...
+                  </p>
+                ) : (
+                  <p className="whitespace-pre-wrap text-base text-on-surface leading-relaxed">
+                    {segments.map((s) => s.text).join(" ")}
+                    {interimText && (
+                      <span className="ml-1 text-secondary underline decoration-secondary/40 decoration-dotted underline-offset-4">
+                        {interimText}
+                      </span>
+                    )}
+                  </p>
                 )}
-              </p>
+              </div>
             )}
           </div>
+        </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <span className="font-mono text-xs text-stone-500">
+        {/* Integrated Neural TTS Bar & Save Actions */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-t border-outline-variant">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-xs text-outline tabular-nums">
               {combinedText
                 ? `${combinedText.split(/\s+/).filter(Boolean).length} words`
                 : "0 words"}
             </span>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {isTtsSupported() && (
-                <TtsSpeedControl rate={ttsRate} onChange={onTtsRateChange} />
-              )}
-
-              {isTtsSupported() && combinedText && (
+            {isTtsSupported() && (
+              <div className="inline-flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
                   onClick={handleTtsPreview}
                   title="Play or stop Read Aloud (P)"
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
                     speaking
-                      ? "border-red-300 bg-red-50 text-red-700"
-                      : "border-[#d8d4ca] bg-white text-zinc-800 hover:bg-stone-50"
+                      ? "bg-error-container border-error text-on-error-container"
+                      : "bg-surface-container-lowest border-outline-variant text-secondary hover:text-on-surface hover:bg-surface-container"
                   }`}
                 >
-                  {speaking ? (
-                    <>
-                      <VolumeX className="h-3.5 w-3.5" />
-                      <span>Stop Audio</span>
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="h-3.5 w-3.5" />
-                      <span>Read Aloud</span>
-                    </>
-                  )}
+                  <span
+                    className="material-symbols-outlined text-base"
+                    aria-hidden="true"
+                  >
+                    {speaking ? "stop_circle" : "play_circle"}
+                  </span>
+                  <span>{speaking ? "Stop TTS" : "Listen (TTS)"}</span>
                 </button>
-              )}
+                <TtsSpeedControl rate={ttsRate} onChange={onTtsRateChange} />
+              </div>
+            )}
+          </div>
 
-              {!isRecording && combinedText && (
-                <button
-                  type="button"
-                  onClick={() => void beginRecording("continue")}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-medium text-zinc-800 transition hover:bg-stone-50"
-                  title="Append more speech to this note"
+          <div className="flex flex-wrap items-center gap-2.5">
+            {!isRecording && combinedText && (
+              <button
+                type="button"
+                onClick={() => void beginRecording("continue")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant hover:bg-surface-bright text-xs font-medium transition cursor-pointer"
+                title="Append more speech to this note"
+              >
+                <span
+                  className="material-symbols-outlined text-base text-recording"
+                  aria-hidden="true"
                 >
-                  <Mic className="h-3.5 w-3.5 text-red-600" />
-                  <span>Continue</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                disabled={isRecording || !combinedText}
-                onClick={handleNewSession}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-40"
-                title="Clear and start a fresh recording session"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>New Session</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={isRecording || saving || !combinedText}
-                onClick={() => void persistCurrent()}
-                title="Save or update note in PostgreSQL (Ctrl+S)"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
-              >
-                <Save className="h-3.5 w-3.5" />
-                <span>
-                  {saving
-                    ? "Saving..."
-                    : activeRecordId
-                      ? "Update Note"
-                      : "Save Note"}
+                  mic
                 </span>
+                <span>Continue</span>
               </button>
-            </div>
+            )}
+
+            <button
+              type="button"
+              disabled={isRecording}
+              onClick={handleNewSession}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant hover:bg-surface-bright text-xs font-medium transition disabled:opacity-40 cursor-pointer"
+            >
+              <span
+                className="material-symbols-outlined text-base"
+                aria-hidden="true"
+              >
+                refresh
+              </span>
+              <span>New Session</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isRecording || saving || !combinedText}
+              onClick={() => void persistCurrent()}
+              title="Save or update note in PostgreSQL (Ctrl+S)"
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-primary-container text-on-primary-container hover:bg-inverse-primary text-xs font-medium transition disabled:opacity-40 cursor-pointer"
+            >
+              <span
+                className="material-symbols-outlined text-base"
+                aria-hidden="true"
+              >
+                save
+              </span>
+              <span>
+                {saving
+                  ? "Saving..."
+                  : activeRecordId
+                    ? "Update Note"
+                    : "Save Transcription"}
+              </span>
+            </button>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

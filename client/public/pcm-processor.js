@@ -1,13 +1,13 @@
 /**
  * AudioWorkletProcessor that captures microphone float32 samples,
  * downsamples them to 16kHz Int16 PCM mono, computes RMS level,
- * and posts chunks (~100ms = 1600 samples) to the main thread.
+ * and posts low-latency chunks (~32ms = 512 samples) to the main thread.
  */
 class Pcm16Processor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.targetSampleRate = 16000;
-    this.chunkSamples = 1600; // 100ms at 16kHz
+    this.chunkSamples = 512; // ~32ms at 16kHz for low-latency streaming
     this.buffer = new Int16Array(this.chunkSamples);
     this.bufferOffset = 0;
     this.fractionalIndex = 0;
@@ -22,14 +22,12 @@ class Pcm16Processor extends AudioWorkletProcessor {
     const channelData = input[0];
     const ratio = sampleRate / this.targetSampleRate;
 
-    // Calculate RMS for live mic meter
     let sumSq = 0;
     for (let i = 0; i < channelData.length; i++) {
       sumSq += channelData[i] * channelData[i];
     }
     const rms = Math.sqrt(sumSq / channelData.length);
 
-    // Linear interpolation downsample to 16kHz
     while (this.fractionalIndex < channelData.length) {
       const idx = Math.floor(this.fractionalIndex);
       const frac = this.fractionalIndex - idx;
@@ -55,4 +53,3 @@ class Pcm16Processor extends AudioWorkletProcessor {
 }
 
 registerProcessor("pcm-16-processor", Pcm16Processor);
-

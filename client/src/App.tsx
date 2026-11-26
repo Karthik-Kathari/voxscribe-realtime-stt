@@ -13,6 +13,11 @@ import {
   fetchTranscriptions,
   updateTranscription,
 } from "./lib/api";
+import {
+  getSavedTtsRate,
+  saveTtsRate,
+  setLivePlaybackRate,
+} from "./lib/tts";
 import type {
   EngineStatus,
   TranscriptSegment,
@@ -26,6 +31,7 @@ export function App() {
   const [items, setItems] = useState<Transcription[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [ttsRate, setTtsRate] = useState<number>(() => getSavedTtsRate());
 
   const [searchQuery, setSearchQuery] = useState("");
   const [languageFilter, setLanguageFilter] = useState("all");
@@ -40,9 +46,16 @@ export function App() {
   const [editingItem, setEditingItem] = useState<Transcription | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const handleTtsRateChange = (nextRate: number) => {
+    const clamped = Math.min(1.8, Math.max(0.6, Number(nextRate.toFixed(1))));
+    setTtsRate(clamped);
+    saveTtsRate(clamped);
+    setLivePlaybackRate(clamped);
+  };
+
   const showToast = (msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 3000);
+    window.setTimeout(() => setToast(null), 2800);
   };
 
   const loadHealthAndStats = useCallback(async () => {
@@ -54,7 +67,7 @@ export function App() {
       setEngineStatus(healthRes);
       setStats(statsRes);
     } catch {
-      // handled gracefully by UI badges
+      // handled gracefully by UI status dots
     }
   }, []);
 
@@ -105,7 +118,7 @@ export function App() {
   }) => {
     await createTranscription(payload);
     await refreshAll();
-    showToast("Transcription saved to PostgreSQL");
+    showToast("Saved note to PostgreSQL");
   };
 
   const handleModalSave = async (payload: {
@@ -124,7 +137,7 @@ export function App() {
         notes: payload.notes,
         isFavorite: payload.isFavorite,
       });
-      showToast("Transcription updated");
+      showToast("Note updated");
     } else {
       await createTranscription({
         title: payload.title || undefined,
@@ -135,7 +148,7 @@ export function App() {
         notes: payload.notes,
         isFavorite: payload.isFavorite,
       });
-      showToast("Manual entry created");
+      showToast("Note created");
     }
     await refreshAll();
   };
@@ -148,17 +161,17 @@ export function App() {
   const handleDelete = async (id: string) => {
     await deleteTranscription(id);
     await refreshAll();
-    showToast("Transcription deleted");
+    showToast("Note deleted");
   };
 
   const handleBulkDelete = async (ids: string[]) => {
     const res = await bulkDeleteTranscriptions(ids);
     await refreshAll();
-    showToast(`Deleted ${res.deletedCount} transcriptions`);
+    showToast(`Deleted ${res.deletedCount} notes`);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-[#f5f4ef] text-zinc-900">
       <Header
         status={engineStatus}
         onNewManual={() => {
@@ -168,11 +181,14 @@ export function App() {
         }}
       />
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
         <StatsBar stats={stats} />
 
         <LiveTranscriber
           engineStatus={engineStatus}
+          ttsRate={ttsRate}
+          onTtsRateChange={handleTtsRateChange}
+          hotkeyDisabled={modalOpen}
           onSaveTranscription={handleSaveFromLive}
         />
 
@@ -180,6 +196,8 @@ export function App() {
           items={items}
           total={total}
           loading={loading}
+          ttsRate={ttsRate}
+          onTtsRateChange={handleTtsRateChange}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           languageFilter={languageFilter}
@@ -205,12 +223,14 @@ export function App() {
         open={modalOpen}
         mode={modalMode}
         initial={editingItem}
+        ttsRate={ttsRate}
+        onTtsRateChange={handleTtsRateChange}
         onClose={() => setModalOpen(false)}
         onSave={handleModalSave}
       />
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 rounded-xl border border-indigo-500/40 bg-slate-900/95 px-4 py-2.5 text-xs font-medium text-indigo-200 shadow-2xl backdrop-blur">
+        <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-white shadow-lg">
           {toast}
         </div>
       )}
@@ -219,4 +239,3 @@ export function App() {
 }
 
 export default App;
-

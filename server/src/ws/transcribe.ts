@@ -1,4 +1,10 @@
-import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
+import {
+  EndSensitivity,
+  GoogleGenAI,
+  Modality,
+  StartSensitivity,
+  type LiveServerMessage,
+} from "@google/genai";
 import WebSocket, { type RawData } from "ws";
 import { config } from "../config.js";
 
@@ -49,11 +55,57 @@ async function bridgeGeminiLiveSocket(
 
   const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
   let closed = false;
+  let sessionReady = false;
   let session: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
+  const pendingAudioChunks: Buffer[] = [];
+
+  const sendPcmToSession = (buf: Buffer) => {
+    if (!session || closed) return;
+    session.sendRealtimeInput({
+      audio: {
+        data: buf.toString("base64"),
+        mimeType: "audio/pcm;rate=16000",
+      },
+    });
+  };
+
+  // Attach client listeners immediately so no initial spoken frames are lost during handshake
+  clientWs.on("message", (data, isBinary) => {
+    if (closed) return;
+
+    if (isBinary) {
+      const buf = rawDataToBuffer(data);
+      if (session && sessionReady) {
+        sendPcmToSession(buf);
+      } else if (pendingAudioChunks.length < 150) {
+        pendingAudioChunks.push(buf);
+      }
+      return;
+    }
+
+    try {
+      const msg = JSON.parse(data.toString()) as { type?: string };
+      if (msg.type === "stop" && session) {
+        session.sendRealtimeInput({ audioStreamEnd: true });
+      }
+    } catch {
+      // ignore malformed control frame
+    }
+  });
+
+  clientWs.on("close", () => {
+    closed = true;
+    pendingAudioChunks.length = 0;
+    try {
+      session?.close();
+    } catch {
+      // ignore close errors
+    }
+  });
 
   const languageHint =
     language === "hi-en" || language === "multilingual"
-      ? "The speaker is speaking Indian English mixed with Hindi (Hinglish) or other Indian languages. Transcribe every word verbatim with accurate spelling (including tech words like standup, sprint, deploy, database, API)."
+      ? "The speaker is speaking Indian English mixed with Hindi (Hinglish) or other Indian languages. Transcribe every word verbatim with accurate spelling."
       : `The primary spoken language is ${language}. Transcribe verbatim.`;
 
   try {
@@ -62,10 +114,23 @@ async function bridgeGeminiLiveSocket(
       config: {
         responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+            prefixPaddingMs: 80,
+            silenceDurationMs: 220,
+          },
+        },
         systemInstruction: `You are a passive real-time speech-to-text listener. ${languageHint} Never converse or answer questions; stay silent and only let input audio transcription capture speech.`,
       },
       callbacks: {
         onopen: () => {
+          sessionReady = true;
+          while (pendingAudioChunks.length > 0) {
+            const chunk = pendingAudioChunks.shift();
+            if (chunk) sendPcmToSession(chunk);
+          }
           sendJson(clientWs, {
             type: "ready",
             engine: config.geminiLiveModel,
@@ -75,6 +140,11 @@ async function bridgeGeminiLiveSocket(
           if (closed) return;
 
           if (message.setupComplete) {
+            sessionReady = true;
+            while (pendingAudioChunks.length > 0) {
+              const chunk = pendingAudioChunks.shift();
+              if (chunk) sendPcmToSession(chunk);
+            }
             sendJson(clientWs, {
               type: "ready",
               engine: config.geminiLiveModel,
@@ -116,41 +186,7 @@ async function bridgeGeminiLiveSocket(
     console.error("[ws:gemini] Connect failed:", msg);
     sendJson(clientWs, { type: "error", message: msg });
     clientWs.close();
-    return;
   }
-
-  clientWs.on("message", (data, isBinary) => {
-    if (!session || closed) return;
-
-    if (isBinary) {
-      const buf = rawDataToBuffer(data);
-      session.sendRealtimeInput({
-        audio: {
-          data: buf.toString("base64"),
-          mimeType: "audio/pcm;rate=16000",
-        },
-      });
-      return;
-    }
-
-    try {
-      const msg = JSON.parse(data.toString()) as { type?: string };
-      if (msg.type === "stop") {
-        session.sendRealtimeInput({ audioStreamEnd: true });
-      }
-    } catch {
-      // ignore malformed control frame
-    }
-  });
-
-  clientWs.on("close", () => {
-    closed = true;
-    try {
-      session?.close();
-    } catch {
-      // ignore close errors
-    }
-  });
 }
 
 async function bridgeWhisperSocket(
@@ -207,4 +243,3 @@ async function bridgeWhisperSocket(
     }
   });
 }
-

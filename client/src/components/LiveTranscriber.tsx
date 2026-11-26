@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
-  Cpu,
-  Globe,
+  Gauge,
   Mic,
   RotateCcw,
   Save,
-  Sparkles,
   Square,
   Volume2,
   VolumeX,
@@ -23,6 +21,9 @@ import {
 
 interface LiveTranscriberProps {
   engineStatus: EngineStatus | null;
+  ttsRate: number;
+  onTtsRateChange: (rate: number) => void;
+  hotkeyDisabled?: boolean;
   onSaveTranscription: (payload: {
     title?: string;
     content: string;
@@ -57,6 +58,9 @@ interface SpeechRecognitionLike {
 
 export function LiveTranscriber({
   engineStatus,
+  ttsRate,
+  onTtsRateChange,
+  hotkeyDisabled = false,
   onSaveTranscription,
 }: LiveTranscriberProps) {
   const [engine, setEngine] = useState<SttEngine>("gemini-live-3.1");
@@ -67,11 +71,12 @@ export function LiveTranscriber({
   const [title, setTitle] = useState("");
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [interimText, setInterimText] = useState("");
+  const [editedText, setEditedText] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [waveform, setWaveform] = useState<number[]>(() => Array(28).fill(8));
+  const [waveform, setWaveform] = useState<number[]>(() => Array(28).fill(10));
   const [error, setError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<string>(
-    "Ready. Speak naturally in Hindi, English, or mixed Hinglish."
+    "Ready. Press Space or click Record to speak in Hindi, English, or Hinglish."
   );
   const [saving, setSaving] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -81,13 +86,12 @@ export function LiveTranscriber({
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const timerRef = useRef<number | null>(null);
   const isRecordingRef = useRef(false);
+  const isConnectingRef = useRef(false);
   const segmentsRef = useRef<TranscriptSegment[]>([]);
   const interimRef = useRef("");
   const elapsedRef = useRef(0);
   const hasSavedCurrentRef = useRef(false);
-  const [editedText, setEditedText] = useState<string | null>(null);
 
-  // Sync default engine once health check resolves
   useEffect(() => {
     if (!engineStatus) return;
     if (engineStatus.geminiConfigured) {
@@ -113,7 +117,7 @@ export function LiveTranscriber({
 
   useEffect(() => {
     return () => {
-      cleanupSession();
+      void cleanupSession();
       stopSpeaking();
     };
   }, []);
@@ -142,15 +146,14 @@ export function LiveTranscriber({
   };
 
   const pushWaveformLevel = (rms: number) => {
-    const height = Math.min(100, Math.max(8, Math.round(rms * 420)));
+    const height = Math.min(100, Math.max(10, Math.round(rms * 460)));
     setWaveform((prev) => [...prev.slice(1), height]);
   };
 
   const appendFinalSegment = (text: string, detectedLang?: string) => {
     const cleaned = text.trim();
     if (!cleaned) return;
-    const now = new Date();
-    const stamp = now.toLocaleTimeString([], {
+    const stamp = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -168,14 +171,15 @@ export function LiveTranscriber({
 
   const cleanupSession = async () => {
     isRecordingRef.current = false;
+    isConnectingRef.current = false;
     stopTimer();
-    setWaveform(Array(28).fill(8));
+    setWaveform(Array(28).fill(10));
 
     if (audioRef.current) {
       try {
         await audioRef.current.stop();
       } catch {
-        // ignore audio teardown errors
+        // ignore teardown errors
       }
       audioRef.current = null;
     }
@@ -187,7 +191,7 @@ export function LiveTranscriber({
         }
         wsRef.current.close();
       } catch {
-        // ignore ws close errors
+        // ignore close errors
       }
       wsRef.current = null;
     }
@@ -203,10 +207,13 @@ export function LiveTranscriber({
     }
   };
 
-  const startWebSocketEngine = async (selectedEngine: "gemini-live-3.1" | "faster-whisper") => {
+  const startWebSocketEngine = async (
+    selectedEngine: "gemini-live-3.1" | "faster-whisper"
+  ) => {
+    isConnectingRef.current = true;
     setIsConnecting(true);
     setError(null);
-    setStatusNote(`Connecting to ${selectedEngine === "gemini-live-3.1" ? "Gemini Live 3.1" : "Self-Hosted Faster-Whisper"}...`);
+    setStatusNote("Opening microphone and live stream...");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const engineParam =
@@ -217,29 +224,24 @@ export function LiveTranscriber({
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
-    ws.onopen = async () => {
-      try {
-        const audioHandle = await startPcmCapture((pcmBuffer, rms) => {
-          pushWaveformLevel(rms);
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(pcmBuffer);
-          }
-        });
-        audioRef.current = audioHandle;
-        isRecordingRef.current = true;
-        setIsConnecting(false);
-        setIsRecording(true);
-        startTimer();
-        setStatusNote("Listening live... Speak naturally in Hindi, English, or Hinglish.");
-      } catch (micErr) {
-        setError(
-          micErr instanceof Error
-            ? `Microphone access failed: ${micErr.message}`
-            : "Microphone permission denied."
-        );
-        setIsConnecting(false);
-        setIsRecording(false);
-        await cleanupSession();
+    const earlyPcmQueue: ArrayBuffer[] = [];
+
+    // Start mic capture immediately in parallel with WebSocket handshake
+    const micPromise = startPcmCapture((pcmBuffer, rms) => {
+      pushWaveformLevel(rms);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(pcmBuffer);
+      } else if (ws.readyState === WebSocket.CONNECTING && earlyPcmQueue.length < 40) {
+        earlyPcmQueue.push(pcmBuffer);
+      }
+    });
+
+    ws.onopen = () => {
+      while (earlyPcmQueue.length > 0) {
+        const chunk = earlyPcmQueue.shift();
+        if (chunk && ws.readyState === WebSocket.OPEN) {
+          ws.send(chunk);
+        }
       }
     };
 
@@ -256,14 +258,13 @@ export function LiveTranscriber({
 
         if (msg.type === "ready") {
           setStatusNote(
-            `Streaming audio to ${msg.engine || selectedEngine} in real time...`
+            `Listening live (${msg.engine || selectedEngine}) — speak naturally.`
           );
         } else if (msg.type === "transcript" && msg.text) {
           if (msg.isFinal) {
             appendFinalSegment(msg.text, msg.language);
             setInterimText("");
           } else {
-            // Gemini Live emits progressive BPE transcript chunks on inputTranscription
             setInterimText((prev) => {
               const incoming = msg.text || "";
               if (!prev) return incoming;
@@ -272,7 +273,6 @@ export function LiveTranscriber({
             });
           }
         } else if (msg.type === "turn_complete") {
-          // Commit accumulated interim text as a completed utterance segment
           if (interimRef.current.trim()) {
             appendFinalSegment(interimRef.current);
             setInterimText("");
@@ -287,18 +287,43 @@ export function LiveTranscriber({
     };
 
     ws.onerror = () => {
-      setError("WebSocket connection error. Verify server & API key configuration.");
+      setError("WebSocket connection error. Verify server & API key.");
+      isConnectingRef.current = false;
       setIsConnecting(false);
       void handleStop(false);
     };
 
     ws.onclose = () => {
       if (isRecordingRef.current) {
+        isRecordingRef.current = false;
+        isConnectingRef.current = false;
         setIsRecording(false);
         setIsConnecting(false);
         stopTimer();
       }
     };
+
+    try {
+      const audioHandle = await micPromise;
+      audioRef.current = audioHandle;
+      isRecordingRef.current = true;
+      isConnectingRef.current = false;
+      setIsConnecting(false);
+      setIsRecording(true);
+      startTimer();
+      setStatusNote("Listening live... Press Space when finished.");
+    } catch (micErr) {
+      earlyPcmQueue.length = 0;
+      setError(
+        micErr instanceof Error
+          ? `Microphone access failed: ${micErr.message}`
+          : "Microphone permission denied."
+      );
+      isConnectingRef.current = false;
+      setIsConnecting(false);
+      setIsRecording(false);
+      await cleanupSession();
+    }
   };
 
   const startBrowserSpeechEngine = () => {
@@ -310,7 +335,7 @@ export function LiveTranscriber({
 
     if (!SpeechRec) {
       setError(
-        "Browser Web Speech API is not supported in this browser. Use Chrome/Edge or select Gemini Live 3.1."
+        "Browser Web Speech API is unavailable here. Use Chrome/Edge or Gemini Live 3.1."
       );
       return;
     }
@@ -333,7 +358,7 @@ export function LiveTranscriber({
         }
       }
       setInterimText(interim);
-      pushWaveformLevel(0.15 + Math.random() * 0.15);
+      pushWaveformLevel(0.18 + Math.random() * 0.22);
     };
 
     recognition.onerror = (event) => {
@@ -357,12 +382,12 @@ export function LiveTranscriber({
     setError(null);
     setIsRecording(true);
     startTimer();
-    setStatusNote("Listening via Browser Web Speech API (instant open fallback)...");
+    setStatusNote("Listening via Browser Speech... Press Space when finished.");
     recognition.start();
   };
 
   const handleStart = async () => {
-    if (isRecording || isConnecting) return;
+    if (isRecordingRef.current || isConnectingRef.current) return;
     setError(null);
     if (hasSavedCurrentRef.current) {
       setSegments([]);
@@ -374,6 +399,7 @@ export function LiveTranscriber({
     } else if (editedText !== null) {
       setEditedText(null);
     }
+
     if (engine === "web-speech") {
       startBrowserSpeechEngine();
     } else {
@@ -411,10 +437,10 @@ export function LiveTranscriber({
       .trim();
 
     if (triggerAutoSave && autoSave && fullContent) {
-      setStatusNote("Saving transcription to Neon PostgreSQL...");
+      setStatusNote("Saving note to PostgreSQL...");
       await persistCurrent(fullContent, finalSegments, currentDuration);
     } else {
-      setStatusNote("Recording stopped. Edit or save your transcription below.");
+      setStatusNote("Stopped. Review, edit, or save below.");
     }
   };
 
@@ -438,7 +464,7 @@ export function LiveTranscriber({
         segments: overrideSegments ?? segments,
       });
       hasSavedCurrentRef.current = true;
-      setStatusNote("Saved to PostgreSQL transcription history!");
+      setStatusNote("Saved to history. Press Space anytime to record a new note.");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to save transcription"
@@ -457,7 +483,7 @@ export function LiveTranscriber({
     setElapsedSeconds(0);
     hasSavedCurrentRef.current = false;
     setError(null);
-    setStatusNote("Cleared workspace. Ready for a new recording.");
+    setStatusNote("Cleared. Press Space or click Record to start.");
   };
 
   const handleTtsPreview = () => {
@@ -467,269 +493,297 @@ export function LiveTranscriber({
       setSpeaking(false);
       return;
     }
-    speakText(combinedText, language, {
+    void speakText(combinedText, language, {
+      rate: ttsRate,
       onStart: () => setSpeaking(true),
       onEnd: () => setSpeaking(false),
       onError: () => setSpeaking(false),
     });
   };
 
-  const engineOptions: Array<{
+  // Keep latest handlers in refs for global Spacebar shortcut
+  const handleStartRef = useRef(handleStart);
+  const handleStopRef = useRef(handleStop);
+  handleStartRef.current = handleStart;
+  handleStopRef.current = handleStop;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (hotkeyDisabled) return;
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tag === "BUTTON" ||
+        tag === "A" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      if (isRecordingRef.current) {
+        void handleStopRef.current(true);
+      } else if (!isConnectingRef.current) {
+        void handleStartRef.current();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hotkeyDisabled]);
+
+  const engineTabs: Array<{
     id: SttEngine;
     label: string;
-    badge: string;
     available: boolean;
-    icon: typeof Sparkles;
-    hint: string;
   }> = [
     {
       id: "gemini-live-3.1",
       label: "Gemini Live 3.1",
-      badge: "Free API · Real-Time",
       available: Boolean(engineStatus?.geminiConfigured),
-      icon: Sparkles,
-      hint: "Best for Hindi + English code-switching (Hinglish)",
     },
     {
       id: "faster-whisper",
       label: "Faster-Whisper",
-      badge: "Self-Hosted OSS",
       available: Boolean(engineStatus?.whisperConfigured),
-      icon: Cpu,
-      hint: "Open-source Docker microservice (run via docker-compose)",
     },
     {
       id: "web-speech",
       label: "Browser Speech",
-      badge: "Zero-Setup",
       available: true,
-      icon: Globe,
-      hint: "Built-in browser STT fallback (works with zero API keys)",
     },
   ];
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-800/90 bg-gradient-to-b from-slate-900/90 to-slate-900/60 shadow-2xl">
-      <div className="border-b border-slate-800/80 px-5 py-4 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-white">
-              Live Multilingual Studio
-            </h2>
-            <p className="text-xs text-slate-400">{statusNote}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={language}
-              disabled={isRecording}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 focus:border-indigo-500 focus:outline-none disabled:opacity-60"
-            >
-              {LANGUAGE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-1.5 text-xs text-slate-300">
-              <input
-                type="checkbox"
-                checked={autoSave}
-                onChange={(e) => setAutoSave(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-0"
-              />
-              <span>Auto-save on stop</span>
-            </label>
-          </div>
+    <section className="overflow-hidden rounded-xl border border-[#e5e2da] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      {/* Toolbar Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#ece9e2] px-5 py-3.5 sm:px-6">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">
+            Voice Recorder
+          </h2>
+          <p className="text-xs text-stone-500">{statusNote}</p>
         </div>
 
-        {/* Engine Switcher */}
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-          {engineOptions.map((opt) => {
-            const Icon = opt.icon;
-            const active = engine === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                disabled={isRecording}
-                onClick={() => setEngine(opt.id)}
-                className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  active
-                    ? "border-indigo-500/60 bg-indigo-500/10 ring-1 ring-indigo-500/30"
-                    : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
-                }`}
-              >
-                <div
-                  className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Segmented Engine Picker */}
+          <div className="inline-flex rounded-lg border border-[#e5e2da] bg-[#f5f4ef] p-0.5">
+            {engineTabs.map((tab) => {
+              const active = engine === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  disabled={isRecording}
+                  onClick={() => setEngine(tab.id)}
+                  title={
+                    tab.available
+                      ? tab.label
+                      : `${tab.label} is not configured in .env`
+                  }
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed ${
                     active
-                      ? "bg-indigo-500 text-white"
-                      : "bg-slate-800 text-slate-400"
-                  }`}
+                      ? "bg-white text-zinc-900 shadow-xs"
+                      : "text-stone-600 hover:text-zinc-900"
+                  } ${!tab.available && !active ? "opacity-55" : ""}`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold text-white">
-                      {opt.label}
-                    </span>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        opt.available
-                          ? "bg-emerald-500/15 text-emerald-300"
-                          : "bg-slate-800 text-slate-400"
-                      }`}
-                    >
-                      {opt.available ? opt.badge : "Not Configured"}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-400">
-                    {opt.hint}
-                  </p>
-                </div>
-              </button>
-            );
-          })}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <select
+            value={language}
+            disabled={isRecording}
+            onChange={(e) => setLanguage(e.target.value)}
+            className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 focus:border-zinc-900 focus:outline-none disabled:opacity-60"
+          >
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-stone-600 select-none">
+            <input
+              type="checkbox"
+              checked={autoSave}
+              onChange={(e) => setAutoSave(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-stone-300 accent-zinc-900"
+            />
+            <span>Auto-save</span>
+          </label>
         </div>
       </div>
 
+      {/* Studio Body */}
       <div className="space-y-4 p-5 sm:p-6">
         {error && (
-          <div className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Controls + Waveform */}
-        <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-slate-800/90 bg-slate-950/70 p-4 sm:flex-row">
-          <div className="flex items-center gap-4">
+        {/* Record Bar */}
+        <div className="flex flex-col justify-between gap-4 rounded-xl border border-[#e5e2da] bg-[#faf9f5] px-4 py-3.5 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3.5">
             {!isRecording ? (
               <button
                 type="button"
                 disabled={isConnecting}
-                onClick={handleStart}
-                className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 transition hover:scale-105 hover:from-indigo-400 hover:to-violet-500 disabled:opacity-50"
-                title="Start Real-Time Transcription"
+                onClick={() => void handleStart()}
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700 active:scale-95 disabled:opacity-50"
+                title="Start recording (Space)"
               >
-                <Mic className="h-6 w-6" />
+                <Mic className="h-5 w-5" />
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => void handleStop(true)}
-                className="relative flex h-14 w-14 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-600/30 transition hover:scale-105 hover:bg-rose-500"
-                title="Stop Recording"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:bg-zinc-800 active:scale-95"
+                title="Stop recording (Space)"
               >
-                <span className="absolute inset-0 animate-ping rounded-full bg-rose-500/35" />
-                <Square className="relative h-5 w-5 fill-current" />
+                <Square className="h-4 w-4 fill-current" />
               </button>
             )}
 
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-white">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-zinc-900">
                   {isConnecting
                     ? "Connecting..."
                     : isRecording
-                      ? "Recording Live"
-                      : "Press Mic to Speak"}
+                      ? "Recording"
+                      : "Start Recording"}
                 </span>
-                <span className="rounded-md bg-slate-800 px-2 py-0.5 font-mono text-xs text-slate-300">
+                <span className="rounded border border-[#e2dfd7] bg-white px-2 py-0.5 font-mono text-xs text-zinc-700">
                   {formatDuration(elapsedSeconds)}
                 </span>
+                <kbd className="hidden items-center rounded border border-[#d8d4ca] bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-500 sm:inline-flex">
+                  Space
+                </kbd>
               </div>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Try saying:{" "}
-                <span className="italic text-slate-300">
+              <p className="mt-0.5 text-xs text-stone-500">
+                Try:{" "}
+                <span className="italic text-stone-600">
                   &ldquo;Hello team, aaj ka standup 5 minute mein start karte hain.&rdquo;
                 </span>
               </p>
             </div>
           </div>
 
-          {/* Live Audio Level Bars */}
-          <div className="flex h-10 items-center gap-1">
+          {/* Analog Level Meter */}
+          <div className="flex h-9 items-center gap-1 self-end sm:self-center">
             {waveform.map((h, i) => (
               <span
                 key={i}
                 style={{ height: `${h}%` }}
-                className={`w-1.5 rounded-full transition-all duration-100 ${
-                  isRecording
-                    ? "bg-gradient-to-t from-indigo-500 to-cyan-400"
-                    : "bg-slate-800"
+                className={`w-1 rounded-full transition-all duration-75 ${
+                  isRecording ? "bg-red-600" : "bg-[#d6d2c8]"
                 }`}
               />
             ))}
           </div>
         </div>
 
-        {/* Live Transcript Output Box */}
-        <div className="space-y-3">
+        {/* Title + Live / Editable Transcript */}
+        <div className="space-y-2.5">
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Optional session title (e.g., Hinglish Product Standup)..."
-            className="w-full rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            placeholder="Note title (optional — auto-generated from your first words)"
+            className="w-full rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-3.5 py-2 text-xs text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
           />
 
-          <div className="min-h-[150px] rounded-xl border border-slate-800 bg-slate-950/80 p-4">
+          <div className="min-h-[140px] rounded-xl border border-[#e5e2da] bg-[#faf9f5] p-4">
             {!isRecording && (segments.length > 0 || editedText !== null) ? (
               <textarea
-                rows={5}
+                rows={4}
                 value={editedText ?? combinedText}
                 onChange={(e) => setEditedText(e.target.value)}
                 placeholder="Edit your captured transcript..."
-                className="w-full resize-y bg-transparent text-sm leading-relaxed text-slate-100 focus:outline-none"
+                className="w-full resize-y bg-transparent text-sm leading-relaxed text-zinc-900 focus:outline-none"
               />
             ) : segments.length === 0 && !interimText ? (
-              <div className="flex h-28 flex-col items-center justify-center text-center text-xs text-slate-500">
-                <p>Your real-time multilingual transcription will appear here word by word.</p>
-                <p className="mt-1 text-[11px] text-slate-600">
-                  Supports Hindi + English code-switching, Devanagari, Latin, and regional Indian languages.
+              <div className="flex h-24 flex-col items-center justify-center text-center text-xs text-stone-400">
+                <p>Live words appear here as you speak.</p>
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Press <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">Space</kbd> anywhere outside text fields to toggle the mic.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 text-sm leading-relaxed">
-                <p className="whitespace-pre-wrap text-slate-100">
-                  {segments.map((s) => s.text).join(" ")}
-                  {interimText && (
-                    <span className="ml-1 text-indigo-300/90 underline decoration-indigo-500/40 decoration-dotted underline-offset-4">
-                      {interimText}
-                    </span>
-                  )}
-                </p>
-              </div>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-900">
+                {segments.map((s) => s.text).join(" ")}
+                {interimText && (
+                  <span className="ml-1 text-stone-500 underline decoration-stone-400 decoration-dotted underline-offset-4">
+                    {interimText}
+                  </span>
+                )}
+              </p>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-400">
+          {/* Footer Actions + TTS Speed Scroller */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <span className="font-mono text-xs text-stone-500">
               {combinedText
                 ? `${combinedText.split(/\s+/).filter(Boolean).length} words`
                 : "0 words"}
-            </div>
+            </span>
 
             <div className="flex flex-wrap items-center gap-2">
+              {isTtsSupported() && (
+                <div className="flex items-center gap-2 rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-2.5 py-1">
+                  <Gauge className="h-3.5 w-3.5 text-stone-500" />
+                  <span className="text-[11px] font-medium text-stone-600">
+                    Speed
+                  </span>
+                  <input
+                    type="range"
+                    min="0.6"
+                    max="1.8"
+                    step="0.1"
+                    value={ttsRate}
+                    onChange={(e) => onTtsRateChange(Number(e.target.value))}
+                    className="h-1.5 w-20 cursor-pointer accent-zinc-900"
+                    title="Adjust Read Aloud TTS playback speed"
+                  />
+                  <span className="w-8 text-right font-mono text-[11px] font-medium text-zinc-800">
+                    {ttsRate.toFixed(1)}x
+                  </span>
+                </div>
+              )}
+
               {isTtsSupported() && combinedText && (
                 <button
                   type="button"
                   onClick={handleTtsPreview}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    speaking
+                      ? "border-red-300 bg-red-50 text-red-700"
+                      : "border-[#d8d4ca] bg-white text-zinc-800 hover:bg-stone-50"
+                  }`}
                 >
                   {speaking ? (
                     <>
-                      <VolumeX className="h-3.5 w-3.5 text-rose-400" />
+                      <VolumeX className="h-3.5 w-3.5" />
                       <span>Stop Audio</span>
                     </>
                   ) : (
                     <>
-                      <Volume2 className="h-3.5 w-3.5 text-cyan-400" />
-                      <span>Read Aloud (TTS)</span>
+                      <Volume2 className="h-3.5 w-3.5" />
+                      <span>Read Aloud</span>
                     </>
                   )}
                 </button>
@@ -739,7 +793,7 @@ export function LiveTranscriber({
                 type="button"
                 disabled={isRecording || !combinedText}
                 onClick={handleReset}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-slate-800 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-3 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:opacity-40"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>Clear</span>
@@ -749,10 +803,10 @@ export function LiveTranscriber({
                 type="button"
                 disabled={isRecording || saving || !combinedText}
                 onClick={() => void persistCurrent()}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
               >
                 <Save className="h-3.5 w-3.5" />
-                <span>{saving ? "Saving..." : "Save to History"}</span>
+                <span>{saving ? "Saving..." : "Save Note"}</span>
               </button>
             </div>
           </div>
@@ -761,4 +815,3 @@ export function LiveTranscriber({
     </section>
   );
 }
-

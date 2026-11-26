@@ -1,14 +1,41 @@
 /**
- * Multilingual Text-to-Speech helper.
- * Primary: Server neural TTS (/api/tts using hi-IN-SwaraNeural / en-IN-NeerjaNeural)
- * so mixed Hindi + English (Hinglish) words like "aaj", "mein", "karte hain"
- * are spoken naturally instead of being spelled out letter-by-letter.
+ * Multilingual Text-to-Speech helper with real-time playback rate control.
+ * Primary: Server neural TTS (/api/tts using hi-IN-SwaraNeural / en-IN-NeerjaNeural).
  * Fallback: Browser Web Speech Synthesis if offline/unavailable.
  */
 
 let activeAudio: HTMLAudioElement | null = null;
 let activeObjectUrl: string | null = null;
 let activeController: AbortController | null = null;
+
+const TTS_RATE_STORAGE_KEY = "voxscribe_tts_rate";
+
+export function getSavedTtsRate(): number {
+  try {
+    const raw = localStorage.getItem(TTS_RATE_STORAGE_KEY);
+    if (!raw) return 1.0;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0.5 && parsed <= 2.0
+      ? parsed
+      : 1.0;
+  } catch {
+    return 1.0;
+  }
+}
+
+export function saveTtsRate(rate: number): void {
+  try {
+    localStorage.setItem(TTS_RATE_STORAGE_KEY, String(rate));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function setLivePlaybackRate(rate: number): void {
+  if (activeAudio) {
+    activeAudio.playbackRate = rate;
+  }
+}
 
 export function isTtsSupported(): boolean {
   return typeof window !== "undefined";
@@ -49,7 +76,6 @@ function fallbackBrowserSpeech(
   }
 
   window.speechSynthesis.cancel();
-  // Smooth common Romanized Hinglish tokens so browser voices don't spell them as acronyms
   const normalizedText = text.replace(/\baaj\b/gi, "aajh");
   const utterance = new SpeechSynthesisUtterance(normalizedText);
   const hasDevanagari = /[\u0900-\u097F]/.test(text);

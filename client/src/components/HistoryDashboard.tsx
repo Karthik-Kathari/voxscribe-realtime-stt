@@ -4,6 +4,7 @@ import {
   Copy,
   Download,
   Edit3,
+  Gauge,
   Search,
   Star,
   Trash2,
@@ -21,6 +22,8 @@ interface HistoryDashboardProps {
   items: Transcription[];
   total: number;
   loading: boolean;
+  ttsRate: number;
+  onTtsRateChange: (rate: number) => void;
   searchQuery: string;
   onSearchChange: (value: string) => void;
   languageFilter: string;
@@ -41,6 +44,8 @@ export function HistoryDashboard({
   items,
   total,
   loading,
+  ttsRate,
+  onTtsRateChange,
   searchQuery,
   onSearchChange,
   languageFilter,
@@ -108,7 +113,8 @@ export function HistoryDashboard({
       setSpeakingId(null);
       return;
     }
-    speakText(item.content, item.language, {
+    void speakText(item.content, item.language, {
+      rate: ttsRate,
       onStart: () => setSpeakingId(item.id),
       onEnd: () => setSpeakingId(null),
       onError: () => setSpeakingId(null),
@@ -116,47 +122,70 @@ export function HistoryDashboard({
   };
 
   return (
-    <section className="rounded-2xl border border-slate-800/90 bg-slate-900/60 shadow-xl">
-      <div className="border-b border-slate-800/80 px-5 py-4 sm:px-6">
+    <section className="rounded-xl border border-[#e5e2da] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      <div className="border-b border-[#ece9e2] px-5 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-white">
-              Transcription History Dashboard
+            <h2 className="text-sm font-semibold text-zinc-900">
+              Saved Transcriptions
             </h2>
-            <p className="text-xs text-slate-400">
-              Stored in PostgreSQL &middot; {total}{" "}
-              {total === 1 ? "record" : "records"} matching current filters
+            <p className="text-xs text-stone-500">
+              {total} {total === 1 ? "entry" : "entries"} in PostgreSQL
             </p>
           </div>
 
-          {selectedIds.length > 0 && (
-            <button
-              type="button"
-              onClick={handleBulkDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-medium text-rose-300 transition hover:bg-rose-500/25"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>Delete Selected ({selectedIds.length})</span>
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {isTtsSupported() && (
+              <div className="flex items-center gap-2 rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-2.5 py-1">
+                <Gauge className="h-3.5 w-3.5 text-stone-500" />
+                <span className="text-[11px] font-medium text-stone-600">
+                  TTS Speed
+                </span>
+                <input
+                  type="range"
+                  min="0.6"
+                  max="1.8"
+                  step="0.1"
+                  value={ttsRate}
+                  onChange={(e) => onTtsRateChange(Number(e.target.value))}
+                  className="h-1.5 w-20 cursor-pointer accent-zinc-900"
+                  title="Adjust playback speed for Read Aloud"
+                />
+                <span className="w-8 text-right font-mono text-[11px] font-medium text-zinc-800">
+                  {ttsRate.toFixed(1)}x
+                </span>
+              </div>
+            )}
+
+            {selectedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete Selected ({selectedIds.length})</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
           <div className="relative lg:col-span-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search Hindi, English, Hinglish text or notes..."
-              className="w-full rounded-lg border border-slate-700/80 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+              placeholder="Search notes, Hindi/English text..."
+              className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] py-1.5 pl-8 pr-3 text-xs text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
             />
           </div>
 
           <select
             value={languageFilter}
             onChange={(e) => onLanguageFilterChange(e.target.value)}
-            className="rounded-lg border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+            className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs text-zinc-800 focus:border-zinc-900 focus:outline-none"
           >
             <option value="all">All Languages</option>
             {LANGUAGE_OPTIONS.map((opt) => (
@@ -169,12 +198,12 @@ export function HistoryDashboard({
           <select
             value={engineFilter}
             onChange={(e) => onEngineFilterChange(e.target.value)}
-            className="rounded-lg border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+            className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs text-zinc-800 focus:border-zinc-900 focus:outline-none"
           >
             <option value="all">All Engines</option>
             <option value="gemini-live-3.1">Gemini Live 3.1</option>
             <option value="faster-whisper">Faster-Whisper (OSS)</option>
-            <option value="web-speech">Browser Speech API</option>
+            <option value="web-speech">Browser Speech</option>
             <option value="manual">Manual Entry</option>
           </select>
 
@@ -186,7 +215,7 @@ export function HistoryDashboard({
                   e.target.value as "newest" | "oldest" | "longest"
                 )
               }
-              className="flex-1 rounded-lg border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
+              className="flex-1 rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs text-zinc-800 focus:border-zinc-900 focus:outline-none"
             >
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
@@ -196,15 +225,15 @@ export function HistoryDashboard({
             <button
               type="button"
               onClick={() => onFavoriteOnlyChange(!favoriteOnly)}
-              className={`rounded-lg border px-2.5 py-2 text-xs font-medium transition ${
+              className={`rounded-lg border px-2.5 py-1.5 text-xs transition ${
                 favoriteOnly
-                  ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                  : "border-slate-700/80 bg-slate-950 text-slate-400 hover:text-slate-200"
+                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-[#d8d4ca] bg-white text-stone-500 hover:text-zinc-900"
               }`}
-              title="Filter favorites only"
+              title="Starred only"
             >
               <Star
-                className={`h-3.5 w-3.5 ${favoriteOnly ? "fill-amber-400" : ""}`}
+                className={`h-3.5 w-3.5 ${favoriteOnly ? "fill-amber-500 text-amber-500" : ""}`}
               />
             </button>
           </div>
@@ -212,32 +241,34 @@ export function HistoryDashboard({
       </div>
 
       {items.length > 0 && (
-        <div className="flex items-center justify-between border-b border-slate-800/60 bg-slate-950/40 px-5 py-2 text-xs text-slate-400 sm:px-6">
+        <div className="flex items-center justify-between border-b border-[#ece9e2] bg-[#faf9f5] px-5 py-2 text-xs text-stone-500 sm:px-6">
           <label className="inline-flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={toggleSelectAll}
-              className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-0"
+              className="h-3.5 w-3.5 rounded border-stone-300 accent-zinc-900"
             />
-            <span>Select all on page</span>
+            <span>Select all</span>
           </label>
-          <span>Click Edit to modify text, notes, or export</span>
+          <span className="hidden sm:inline">
+            Edit, star, export, or play any note aloud
+          </span>
         </div>
       )}
 
-      <div className="divide-y divide-slate-800/60">
+      <div className="divide-y divide-[#ece9e2]">
         {loading ? (
-          <div className="px-6 py-12 text-center text-sm text-slate-400">
-            Loading transcription history from PostgreSQL...
+          <div className="px-6 py-10 text-center text-xs text-stone-500">
+            Loading notes from PostgreSQL...
           </div>
         ) : items.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <p className="text-sm font-medium text-slate-300">
-              No transcriptions found
+            <p className="text-sm font-medium text-zinc-800">
+              No saved transcriptions yet
             </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Start speaking above or click &ldquo;New Entry&rdquo; to create your first saved transcript.
+            <p className="mt-1 text-xs text-stone-500">
+              Press Space to record your first voice note or click &ldquo;New Note&rdquo;.
             </p>
           </div>
         ) : (
@@ -249,8 +280,8 @@ export function HistoryDashboard({
             return (
               <article
                 key={item.id}
-                className={`group px-5 py-4 transition sm:px-6 ${
-                  isSelected ? "bg-indigo-500/5" : "hover:bg-slate-800/30"
+                className={`px-5 py-4 transition sm:px-6 ${
+                  isSelected ? "bg-amber-50/50" : "hover:bg-[#faf9f5]"
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -258,22 +289,22 @@ export function HistoryDashboard({
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => toggleSelectOne(item.id)}
-                    className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-0"
+                    className="mt-1 h-3.5 w-3.5 rounded border-stone-300 accent-zinc-900"
                   />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white">
+                        <h3 className="text-sm font-semibold text-zinc-900">
                           {item.title}
                         </h3>
-                        <span className="rounded-md border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-[11px] font-medium text-slate-300">
+                        <span className="rounded border border-[#e5e2da] bg-[#f5f4ef] px-1.5 py-0.5 font-mono text-[10px] text-stone-600">
                           {item.engine}
                         </span>
                         {item.detectedLanguages.map((lang) => (
                           <span
                             key={lang}
-                            className="rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-medium text-cyan-300"
+                            className="rounded border border-[#e5e2da] bg-white px-1.5 py-0.5 text-[10px] font-medium text-stone-600"
                           >
                             {lang}
                           </span>
@@ -284,16 +315,16 @@ export function HistoryDashboard({
                         <button
                           type="button"
                           onClick={() => onToggleFavorite(item)}
-                          className={`rounded-lg p-1.5 transition ${
+                          className={`rounded-md p-1.5 transition ${
                             item.isFavorite
-                              ? "text-amber-400 hover:bg-amber-500/10"
-                              : "text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                              ? "text-amber-500 hover:bg-amber-50"
+                              : "text-stone-400 hover:bg-stone-100 hover:text-zinc-700"
                           }`}
-                          title="Toggle favorite"
+                          title="Star note"
                         >
                           <Star
-                            className={`h-4 w-4 ${
-                              item.isFavorite ? "fill-amber-400" : ""
+                            className={`h-3.5 w-3.5 ${
+                              item.isFavorite ? "fill-amber-500" : ""
                             }`}
                           />
                         </button>
@@ -302,21 +333,21 @@ export function HistoryDashboard({
                           <button
                             type="button"
                             onClick={() => handleSpeak(item)}
-                            className={`rounded-lg p-1.5 transition ${
+                            className={`rounded-md p-1.5 transition ${
                               isSpeaking
-                                ? "bg-cyan-500/15 text-cyan-300"
-                                : "text-slate-400 hover:bg-slate-800 hover:text-cyan-300"
+                                ? "bg-red-50 text-red-600"
+                                : "text-stone-400 hover:bg-stone-100 hover:text-zinc-900"
                             }`}
                             title={
                               isSpeaking
                                 ? "Stop reading aloud"
-                                : "Read aloud (Text-to-Speech)"
+                                : `Read aloud (${ttsRate.toFixed(1)}x)`
                             }
                           >
                             {isSpeaking ? (
-                              <VolumeX className="h-4 w-4" />
+                              <VolumeX className="h-3.5 w-3.5" />
                             ) : (
-                              <Volume2 className="h-4 w-4" />
+                              <Volume2 className="h-3.5 w-3.5" />
                             )}
                           </button>
                         )}
@@ -324,51 +355,51 @@ export function HistoryDashboard({
                         <button
                           type="button"
                           onClick={() => handleCopy(item)}
-                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
-                          title="Copy transcript"
+                          className="rounded-md p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-zinc-900"
+                          title="Copy text"
                         >
                           {copiedId === item.id ? (
-                            <Check className="h-4 w-4 text-emerald-400" />
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
                           ) : (
-                            <Copy className="h-4 w-4" />
+                            <Copy className="h-3.5 w-3.5" />
                           )}
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleExportJson(item)}
-                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                          className="rounded-md p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-zinc-900"
                           title="Export JSON"
                         >
-                          <Download className="h-4 w-4" />
+                          <Download className="h-3.5 w-3.5" />
                         </button>
 
                         <button
                           type="button"
                           onClick={() => onEdit(item)}
-                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-indigo-300"
-                          title="Edit transcript"
+                          className="rounded-md p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-zinc-900"
+                          title="Edit note"
                         >
-                          <Edit3 className="h-4 w-4" />
+                          <Edit3 className="h-3.5 w-3.5" />
                         </button>
 
                         {isConfirming ? (
-                          <div className="ml-1 flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-0.5">
+                          <div className="ml-1 flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2 py-0.5">
                             <button
                               type="button"
                               onClick={async () => {
                                 await onDelete(item.id);
                                 setConfirmDeleteId(null);
                               }}
-                              className="text-[11px] font-semibold text-rose-300 hover:text-rose-200"
+                              className="text-[11px] font-semibold text-red-700 hover:text-red-800"
                             >
-                              Confirm
+                              Delete
                             </button>
-                            <span className="text-slate-600">/</span>
+                            <span className="text-red-300">/</span>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteId(null)}
-                              className="text-[11px] text-slate-400 hover:text-white"
+                              className="text-[11px] text-stone-600 hover:text-zinc-900"
                             >
                               Cancel
                             </button>
@@ -377,31 +408,30 @@ export function HistoryDashboard({
                           <button
                             type="button"
                             onClick={() => setConfirmDeleteId(item.id)}
-                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-400"
-                            title="Delete transcript"
+                            className="rounded-md p-1.5 text-stone-400 transition hover:bg-red-50 hover:text-red-600"
+                            title="Delete note"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
                     </div>
 
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
                       {item.content}
                     </p>
 
                     {item.notes && (
-                      <p className="mt-2 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-400">
-                        <span className="font-medium text-slate-300">Note:</span>{" "}
+                      <p className="mt-2 rounded-md border border-[#e5e2da] bg-[#faf9f5] px-3 py-1.5 text-xs text-stone-600">
+                        <span className="font-medium text-zinc-800">Note:</span>{" "}
                         {item.notes}
                       </p>
                     )}
 
-                    <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-stone-400">
                       <span>{item.wordCount} words</span>
-                      <span>Duration: {formatDuration(item.durationSeconds)}</span>
+                      <span>{formatDuration(item.durationSeconds)}</span>
                       <span>
-                        Created:{" "}
                         {new Date(item.createdAt).toLocaleString(undefined, {
                           dateStyle: "medium",
                           timeStyle: "short",
@@ -418,4 +448,3 @@ export function HistoryDashboard({
     </section>
   );
 }
-

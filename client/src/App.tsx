@@ -315,7 +315,10 @@ export function App() {
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 lg:py-8 pb-20 flex flex-col gap-6">
+      <main
+        key={view}
+        className="animate-page-enter flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-6 lg:py-8 pb-20 flex flex-col gap-6"
+      >
         {view === "studio" ? (
           <>
             <StatsBar stats={stats} />
@@ -382,7 +385,7 @@ export function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 rounded-lg bg-surface-container-high border border-primary px-4 py-2.5 text-xs font-medium text-on-surface shadow-lg"
+          className="animate-modal-enter fixed bottom-6 right-6 z-50 rounded-lg bg-surface-container-high border border-primary px-4 py-2.5 text-xs font-medium text-on-surface shadow-lg"
         >
           {toast}
         </div>

@@ -343,10 +343,10 @@ export function HistoryDashboard({
             return (
               <article
                 key={item.id}
-                className={`h-full rounded-xl bg-surface-container-low border p-5 flex flex-col justify-between gap-4 transition ${
+                className={`card-hover h-full rounded-xl bg-surface-container-low border p-5 flex flex-col justify-between gap-4 ${
                   isSelected
                     ? "border-primary bg-surface-container"
-                    : "border-outline-variant hover:border-outline"
+                    : "border-outline-variant"
                 }`}
               >
                 <div className="flex flex-col gap-3">
@@ -480,14 +480,14 @@ export function HistoryDashboard({
       {/* Delete Confirmation Modal */}
       {deletingItem && (
         <div
-          className="fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
+          className="animate-backdrop-fade fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="deleteModalTitle"
           onClick={() => !deletingBusy && setDeletingItem(null)}
         >
           <div
-            className="w-full max-w-md rounded-xl bg-surface-container border border-outline-variant p-6 flex flex-col gap-4"
+            className="animate-modal-enter w-full max-w-md rounded-xl bg-surface-container border border-outline-variant p-6 flex flex-col gap-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h2

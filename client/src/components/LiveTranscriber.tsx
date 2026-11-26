@@ -973,7 +973,7 @@ export function LiveTranscriber({
                   onClick={() => void handleStop(true)}
                   aria-label="Stop recording"
                   title="Stop recording (Space)"
-                  className="w-14 h-14 rounded-full bg-recording text-on-recording flex items-center justify-center hover:opacity-90 active:scale-95 transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer shadow-[0_0_0_4px_rgba(239,68,68,0.2)]"
+                  className="animate-rec-ring w-14 h-14 rounded-full bg-recording text-on-recording flex items-center justify-center hover:opacity-90 active:scale-95 transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer"
                 >
                   <span
                     className="material-symbols-outlined text-2xl"

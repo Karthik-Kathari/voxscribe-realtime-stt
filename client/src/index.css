@@ -88,15 +88,103 @@
   50% { transform: scaleY(1); }
 }
 
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes backdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes recRingPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes ambientDrift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16px, -12px, 0) scale(1.05);
+  }
+}
+
 .wave-bar {
   transform-origin: center;
   animation: wavePulse 1.3s ease-in-out infinite;
+}
+
+.animate-page-enter {
+  animation: pageEnter 280ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.animate-modal-enter {
+  animation: modalEnter 220ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.animate-backdrop-fade {
+  animation: backdropFade 180ms ease-out both;
+}
+
+.animate-rec-ring {
+  animation: recRingPulse 1.6s ease-in-out infinite;
+}
+
+.animate-ambient-drift {
+  animation: ambientDrift 10s ease-in-out infinite;
+}
+
+.card-hover {
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 200ms ease-out,
+    box-shadow 220ms ease-out,
+    background-color 180ms ease-out;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(196, 192, 255, 0.35);
+  box-shadow: 0 12px 28px -12px rgba(91, 76, 245, 0.25);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .wave-bar {
     animation: none !important;
     transform: scaleY(0.65);
+  }
+  .animate-page-enter,
+  .animate-modal-enter,
+  .animate-backdrop-fade,
+  .animate-rec-ring,
+  .animate-ambient-drift {
+    animation: none !important;
+  }
+  .card-hover:hover {
+    transform: none;
   }
 }
 

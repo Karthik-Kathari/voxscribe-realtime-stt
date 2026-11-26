@@ -36,7 +36,7 @@ export function StatsBar({ stats }: StatsBarProps) {
       {items.map((item) => (
         <div
           key={item.label}
-          className="rounded-xl bg-surface-container-low border border-outline-variant px-4 py-3 flex flex-col gap-1"
+          className="card-hover rounded-xl bg-surface-container-low border border-outline-variant px-4 py-3 flex flex-col gap-1"
         >
           <span className="text-xs font-medium tracking-wide text-outline">
             {item.label}

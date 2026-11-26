@@ -1,5 +1,54 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { VoxLogo } from "./VoxLogo";
+
+function Reveal({
+  children,
+  delayMs = 0,
+  className = "",
+}: {
+  children: ReactNode;
+  delayMs?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (
+      typeof IntersectionObserver === "undefined" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setVisible(true);
+      return;
+    }
+
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          obs.disconnect();
+        }
+      },
+      { threshold: 0.12 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      style={{ transitionDelay: `${delayMs}ms` }}
+      className={`transition-all duration-500 ease-out ${
+        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-5"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
 
 interface LandingPageProps {
   onNavigateStudio: () => void;
@@ -35,7 +84,7 @@ export function LandingPage({
   const activePreview = PREVIEW_ENGINES[previewEngine];
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface text-on-surface">
+    <div className="animate-page-enter min-h-screen flex flex-col bg-surface text-on-surface">
       {/* Sticky Navigation */}
       <header className="sticky top-0 z-40 bg-surface-container-lowest border-b border-outline-variant">
         <div className="max-w-7xl mx-auto px-4 lg:px-8 h-16 flex items-center justify-between gap-4">
@@ -177,7 +226,17 @@ export function LandingPage({
           id="product"
           className="relative overflow-hidden border-b border-outline-variant bg-surface"
         >
-          <div className="max-w-7xl mx-auto px-4 lg:px-8 py-12 lg:py-20 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+          {/* Subtle ambient radial glow */}
+          <div
+            aria-hidden="true"
+            className="animate-ambient-drift pointer-events-none absolute -top-24 right-1/4 h-96 w-96 rounded-full bg-primary-container/15 blur-3xl"
+          />
+          <div
+            aria-hidden="true"
+            className="animate-ambient-drift pointer-events-none absolute -bottom-24 left-1/4 h-80 w-80 rounded-full bg-secondary-container/10 blur-3xl"
+            style={{ animationDelay: "3s" }}
+          />
+          <div className="relative max-w-7xl mx-auto px-4 lg:px-8 py-12 lg:py-20 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
             <div className="lg:col-span-6 flex flex-col gap-6">
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-outline-variant text-secondary text-xs font-medium">
@@ -340,7 +399,10 @@ export function LandingPage({
                 </div>
 
                 {/* Live Transcript Output Preview */}
-                <div className="rounded-lg bg-surface-container border border-outline-variant p-4 flex flex-col gap-3">
+                <div
+                  key={previewEngine}
+                  className="animate-page-enter rounded-lg bg-surface-container border border-outline-variant p-4 flex flex-col gap-3"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-outline">
                       Live Transcription
@@ -402,7 +464,7 @@ export function LandingPage({
           className="py-16 lg:py-24 border-b border-outline-variant"
         >
           <div className="max-w-7xl mx-auto px-4 lg:px-8 flex flex-col gap-12">
-            <div className="max-w-2xl flex flex-col gap-3">
+            <Reveal className="max-w-2xl flex flex-col gap-3">
               <h2 className="font-display text-3xl lg:text-[40px] lg:leading-[48px] tracking-[-0.8px] font-bold text-on-surface text-balance">
                 Built for real multilingual conversations.
               </h2>
@@ -411,10 +473,11 @@ export function LandingPage({
                 code-switching between English and Indian languages, switching
                 engines on the fly, and keeping every note searchable.
               </p>
-            </div>
+            </Reveal>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+            <Reveal delayMs={80}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -442,7 +505,7 @@ export function LandingPage({
                 </div>
               </article>
 
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-secondary">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -463,7 +526,7 @@ export function LandingPage({
                 </div>
               </article>
 
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -484,7 +547,7 @@ export function LandingPage({
                 </div>
               </article>
 
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-secondary">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -505,7 +568,7 @@ export function LandingPage({
                 </div>
               </article>
 
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -526,7 +589,7 @@ export function LandingPage({
                 </div>
               </article>
 
-              <article className="h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
+              <article className="card-hover h-full rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-3">
                   <span className="w-10 h-10 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center text-success">
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">
@@ -546,7 +609,8 @@ export function LandingPage({
                   $0 / month · Open Source
                 </div>
               </article>
-            </div>
+              </div>
+            </Reveal>
           </div>
         </section>
 
@@ -556,52 +620,54 @@ export function LandingPage({
           className="py-16 lg:py-24 border-b border-outline-variant bg-surface-container-lowest"
         >
           <div className="max-w-7xl mx-auto px-4 lg:px-8 flex flex-col gap-12">
-            <div className="max-w-2xl flex flex-col gap-3">
+            <Reveal className="max-w-2xl flex flex-col gap-3">
               <h2 className="font-display text-3xl lg:text-[40px] lg:leading-[48px] tracking-[-0.8px] font-bold text-on-surface text-balance">
                 From voice to searchable text in three steps.
               </h2>
-            </div>
+            </Reveal>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
-              <div className="rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
-                <span className="material-symbols-outlined text-3xl text-recording" aria-hidden="true">
-                  mic
-                </span>
-                <h3 className="font-headline text-lg font-semibold text-on-surface">
-                  1. Speak
-                </h3>
-                <p className="text-sm leading-[22px] text-on-surface-variant">
-                  Press Space or click the microphone button to start recording.
-                  Watch live audio waveforms confirm your input in real time.
-                </p>
-              </div>
+            <Reveal delayMs={80}>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                <div className="card-hover rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
+                  <span className="material-symbols-outlined text-3xl text-recording" aria-hidden="true">
+                    mic
+                  </span>
+                  <h3 className="font-headline text-lg font-semibold text-on-surface">
+                    1. Speak
+                  </h3>
+                  <p className="text-sm leading-[22px] text-on-surface-variant">
+                    Press Space or click the microphone button to start recording.
+                    Watch live audio waveforms confirm your input in real time.
+                  </p>
+                </div>
 
-              <div className="rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
-                <span className="material-symbols-outlined text-3xl text-primary" aria-hidden="true">
-                  psychology
-                </span>
-                <h3 className="font-headline text-lg font-semibold text-on-surface">
-                  2. Transcribe
-                </h3>
-                <p className="text-sm leading-[22px] text-on-surface-variant">
-                  Pick Hinglish or any of 8+ Indian languages and choose Gemini
-                  AI, Faster-Whisper, or Browser Speech Recognition.
-                </p>
-              </div>
+                <div className="card-hover rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
+                  <span className="material-symbols-outlined text-3xl text-primary" aria-hidden="true">
+                    psychology
+                  </span>
+                  <h3 className="font-headline text-lg font-semibold text-on-surface">
+                    2. Transcribe
+                  </h3>
+                  <p className="text-sm leading-[22px] text-on-surface-variant">
+                    Pick Hinglish or any of 8+ Indian languages and choose Gemini
+                    AI, Faster-Whisper, or Browser Speech Recognition.
+                  </p>
+                </div>
 
-              <div className="rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
-                <span className="material-symbols-outlined text-3xl text-secondary" aria-hidden="true">
-                  library_add_check
-                </span>
-                <h3 className="font-headline text-lg font-semibold text-on-surface">
-                  3. Use
-                </h3>
-                <p className="text-sm leading-[22px] text-on-surface-variant">
-                  Edit your transcript inline, listen back with adjustable-speed
-                  Neural TTS, copy to clipboard, or save to PostgreSQL history.
-                </p>
+                <div className="card-hover rounded-xl bg-surface-container-low border border-outline-variant p-6 flex flex-col gap-3">
+                  <span className="material-symbols-outlined text-3xl text-secondary" aria-hidden="true">
+                    library_add_check
+                  </span>
+                  <h3 className="font-headline text-lg font-semibold text-on-surface">
+                    3. Use
+                  </h3>
+                  <p className="text-sm leading-[22px] text-on-surface-variant">
+                    Edit your transcript inline, listen back with adjustable-speed
+                    Neural TTS, copy to clipboard, or save to PostgreSQL history.
+                  </p>
+                </div>
               </div>
-            </div>
+            </Reveal>
           </div>
         </section>
 
@@ -611,7 +677,7 @@ export function LandingPage({
           className="py-16 lg:py-24 border-b border-outline-variant"
         >
           <div className="max-w-7xl mx-auto px-4 lg:px-8 flex flex-col gap-10">
-            <div className="max-w-2xl flex flex-col gap-3">
+            <Reveal className="max-w-2xl flex flex-col gap-3">
               <h2 className="font-display text-3xl lg:text-[40px] lg:leading-[48px] tracking-[-0.8px] font-bold text-on-surface text-balance">
                 Modern speech stack, transparently engineered.
               </h2>
@@ -619,70 +685,72 @@ export function LandingPage({
                 VoxScribe combines cloud multimodal models, local-ready Whisper
                 inference, browser-native APIs, and relational persistence.
               </p>
-            </div>
+            </Reveal>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {[
-                {
-                  tag: "AI ENGINE 01",
-                  tagColor: "text-primary",
-                  title: "Gemini AI",
-                  desc: "Multimodal audio understanding tuned for natural Hinglish code-switching and regional Indian accents.",
-                },
-                {
-                  tag: "AI ENGINE 02",
-                  tagColor: "text-secondary",
-                  title: "Faster-Whisper",
-                  desc: "CTranslate2-accelerated Whisper speech recognition for fast, high-accuracy multilingual transcription.",
-                },
-                {
-                  tag: "AI ENGINE 03",
-                  tagColor: "text-primary",
-                  title: "Browser Speech Recognition",
-                  desc: "Zero-setup Web Speech API fallback for instant streaming words directly inside supported browsers.",
-                },
-                {
-                  tag: "VOICE OUTPUT",
-                  tagColor: "text-secondary",
-                  title: "Neural Text-to-Speech",
-                  desc: "Natural speech synthesis with play/stop controls and variable speed playback for reviewing notes.",
-                },
-                {
-                  tag: "PERSISTENCE",
-                  tagColor: "text-success",
-                  title: "PostgreSQL",
-                  desc: "Structured relational storage powering fast search, language filtering, starring, and CRUD edits.",
-                },
-                {
-                  tag: "ARCHITECTURE",
-                  tagColor: "text-on-surface-variant",
-                  title: "Full-Stack Web Platform",
-                  desc: "Clean API contracts, real-time AudioWorklet capture pipelines, and responsive controls.",
-                },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-xl bg-surface-container-low border border-outline-variant p-5 flex flex-col gap-2"
-                >
-                  <span className={`font-mono text-xs ${item.tagColor}`}>
-                    {item.tag}
-                  </span>
-                  <h3 className="font-headline text-base font-semibold text-on-surface">
-                    {item.title}
-                  </h3>
-                  <p className="text-sm leading-[22px] text-on-surface-variant">
-                    {item.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <Reveal delayMs={80}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {[
+                  {
+                    tag: "AI ENGINE 01",
+                    tagColor: "text-primary",
+                    title: "Gemini AI",
+                    desc: "Multimodal audio understanding tuned for natural Hinglish code-switching and regional Indian accents.",
+                  },
+                  {
+                    tag: "AI ENGINE 02",
+                    tagColor: "text-secondary",
+                    title: "Faster-Whisper",
+                    desc: "CTranslate2-accelerated Whisper speech recognition for fast, high-accuracy multilingual transcription.",
+                  },
+                  {
+                    tag: "AI ENGINE 03",
+                    tagColor: "text-primary",
+                    title: "Browser Speech Recognition",
+                    desc: "Zero-setup Web Speech API fallback for instant streaming words directly inside supported browsers.",
+                  },
+                  {
+                    tag: "VOICE OUTPUT",
+                    tagColor: "text-secondary",
+                    title: "Neural Text-to-Speech",
+                    desc: "Natural speech synthesis with play/stop controls and variable speed playback for reviewing notes.",
+                  },
+                  {
+                    tag: "PERSISTENCE",
+                    tagColor: "text-success",
+                    title: "PostgreSQL",
+                    desc: "Structured relational storage powering fast search, language filtering, starring, and CRUD edits.",
+                  },
+                  {
+                    tag: "ARCHITECTURE",
+                    tagColor: "text-on-surface-variant",
+                    title: "Full-Stack Web Platform",
+                    desc: "Clean API contracts, real-time AudioWorklet capture pipelines, and responsive controls.",
+                  },
+                ].map((item) => (
+                  <div
+                    key={item.title}
+                    className="card-hover rounded-xl bg-surface-container-low border border-outline-variant p-5 flex flex-col gap-2"
+                  >
+                    <span className={`font-mono text-xs ${item.tagColor}`}>
+                      {item.tag}
+                    </span>
+                    <h3 className="font-headline text-base font-semibold text-on-surface">
+                      {item.title}
+                    </h3>
+                    <p className="text-sm leading-[22px] text-on-surface-variant">
+                      {item.desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
           </div>
         </section>
 
         {/* Open Source CTA Section */}
         <section id="open-source" className="py-16 lg:py-24 bg-surface-container-lowest">
-          <div className="max-w-5xl mx-auto px-4 lg:px-8">
-            <div className="rounded-2xl bg-surface-container border border-outline-variant p-8 lg:p-12 flex flex-col items-start gap-6">
+          <Reveal className="max-w-5xl mx-auto px-4 lg:px-8">
+            <div className="card-hover rounded-2xl bg-surface-container border border-outline-variant p-8 lg:p-12 flex flex-col items-start gap-6">
               <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high border border-outline-variant text-secondary text-xs font-medium">
                 100% Free &amp; Open Source
               </span>
@@ -716,7 +784,7 @@ export function LandingPage({
                 </button>
               </div>
             </div>
-          </div>
+          </Reveal>
         </section>
       </main>
 
@@ -823,10 +891,10 @@ export function LandingPage({
               LinkedIn (Karthik Kathari)
             </a>
             <a
-              href="mailto:karthikkathari74@gmail.com"
+              href="mailto:karthikmk.workspace@gmail.com"
               className="text-sm text-on-surface-variant hover:text-secondary"
             >
-              karthikkathari74@gmail.com
+              karthikmk.workspace@gmail.com
             </a>
           </div>
         </div>

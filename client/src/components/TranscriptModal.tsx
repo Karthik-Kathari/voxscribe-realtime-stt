@@ -124,14 +124,14 @@ export function TranscriptModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
+      className="animate-backdrop-fade fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="editModalTitle"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface-container border border-outline-variant"
+        className="animate-modal-enter flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface-container border border-outline-variant"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between px-6 py-4 border-b border-outline-variant">

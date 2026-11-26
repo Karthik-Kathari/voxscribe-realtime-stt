@@ -25,10 +25,10 @@ export function StudioFooter() {
             LinkedIn
           </a>
           <a
-            href="mailto:karthikkathari74@gmail.com"
+            href="mailto:karthikmk.workspace@gmail.com"
             className="hover:text-secondary transition"
           >
-            Email
+            karthikmk.workspace@gmail.com
           </a>
         </div>
       </div>

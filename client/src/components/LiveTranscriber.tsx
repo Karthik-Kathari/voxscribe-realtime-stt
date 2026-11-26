@@ -176,8 +176,8 @@ export function LiveTranscriber({
     editedText !== null
       ? editedText
       : [segments.map((s) => s.text).join(" "), interimText.trim()]
-          .filter(Boolean)
-          .join(" ")
+        .filter(Boolean)
+        .join(" ")
   ).trim();
 
   const startTimer = (initialSeconds = 0) => {
@@ -275,6 +275,8 @@ export function LiveTranscriber({
     setError(null);
     setStatusNote("Opening microphone and live stream...");
 
+    let aborted = false;
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const engineParam =
       selectedEngine === "gemini-live-3.1" ? "gemini" : "whisper";
@@ -287,6 +289,7 @@ export function LiveTranscriber({
     const earlyPcmQueue: ArrayBuffer[] = [];
 
     const micPromise = startPcmCapture((pcmBuffer, rms) => {
+      if (aborted) return;
       pushWaveformLevel(rms);
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(pcmBuffer);
@@ -296,6 +299,7 @@ export function LiveTranscriber({
     });
 
     ws.onopen = () => {
+      if (aborted) return;
       while (earlyPcmQueue.length > 0) {
         const chunk = earlyPcmQueue.shift();
         if (chunk && ws.readyState === WebSocket.OPEN) {
@@ -346,6 +350,8 @@ export function LiveTranscriber({
           doneResolverRef.current?.();
           doneResolverRef.current = null;
         } else if (msg.type === "error") {
+          aborted = true;
+          earlyPcmQueue.length = 0;
           setError(msg.message || "Transcription stream error");
           doneResolverRef.current?.();
           doneResolverRef.current = null;
@@ -357,7 +363,9 @@ export function LiveTranscriber({
     };
 
     ws.onerror = () => {
-      setError("WebSocket connection error. Verify server & API key.");
+      aborted = true;
+      earlyPcmQueue.length = 0;
+      setError("WebSocket connection error. Verify server & engine configuration.");
       isConnectingRef.current = false;
       setIsConnecting(false);
       doneResolverRef.current?.();
@@ -368,17 +376,34 @@ export function LiveTranscriber({
     ws.onclose = () => {
       doneResolverRef.current?.();
       doneResolverRef.current = null;
+      if (isConnectingRef.current) {
+        aborted = true;
+        isConnectingRef.current = false;
+        setIsConnecting(false);
+      }
       if (isRecordingRef.current) {
         isRecordingRef.current = false;
-        isConnectingRef.current = false;
         setIsRecording(false);
-        setIsConnecting(false);
         stopTimer();
       }
     };
 
     try {
       const audioHandle = await micPromise;
+      if (
+        aborted ||
+        ws.readyState === WebSocket.CLOSING ||
+        ws.readyState === WebSocket.CLOSED
+      ) {
+        await audioHandle.stop();
+        isRecordingRef.current = false;
+        isConnectingRef.current = false;
+        setIsRecording(false);
+        setIsConnecting(false);
+        stopTimer();
+        return;
+      }
+
       audioRef.current = audioHandle;
       isRecordingRef.current = true;
       isConnectingRef.current = false;
@@ -391,6 +416,7 @@ export function LiveTranscriber({
           : "Listening live... Press Space when finished."
       );
     } catch (micErr) {
+      aborted = true;
       earlyPcmQueue.length = 0;
       setError(
         micErr instanceof Error
@@ -440,7 +466,25 @@ export function LiveTranscriber({
     };
 
     recognition.onerror = (event) => {
-      if (event.error !== "no-speech" && event.error !== "aborted") {
+      if (event.error === "no-speech" || event.error === "aborted") {
+        return;
+      }
+      const fatalErrors = [
+        "not-allowed",
+        "service-not-allowed",
+        "audio-capture",
+        "network",
+      ];
+      if (fatalErrors.includes(event.error)) {
+        const hint =
+          event.error === "not-allowed"
+            ? "Microphone permission denied. Allow mic access in your browser."
+            : event.error === "network"
+              ? "Browser Speech service requires internet access (or switch to Gemini AI)."
+              : `Browser Speech error: ${event.error}`;
+        setError(hint);
+        void handleStop(false);
+      } else {
         setError(`Speech recognition error: ${event.error}`);
       }
     };
@@ -463,7 +507,16 @@ export function LiveTranscriber({
     setStatusNote(
       `Listening via Browser Speech (${activeLanguageConfig.speechLang})...`
     );
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Failed to start Browser Speech: ${err.message}`
+          : "Failed to start Browser Speech."
+      );
+      void handleStop(false);
+    }
   };
 
   const resetSessionState = () => {
@@ -485,6 +538,21 @@ export function LiveTranscriber({
     if (isRecordingRef.current || isConnectingRef.current) return;
     setShowContinuePrompt(false);
     showPromptRef.current = false;
+
+    // Pre-flight engine check before requesting microphone permission
+    if (engine === "faster-whisper" && engineStatus && !engineStatus.whisperConfigured) {
+      setError(
+        "WHISPER_WS_URL is not configured. Run 'docker compose up --build' locally for Faster-Whisper, or switch to Gemini AI / Browser Speech."
+      );
+      return;
+    }
+    if (engine === "gemini-live-3.1" && engineStatus && !engineStatus.geminiConfigured) {
+      setError(
+        "GEMINI_API_KEY is not configured on the server. Add it to .env or switch to Browser Speech."
+      );
+      return;
+    }
+
     setError(null);
 
     let initialElapsed = elapsedRef.current;
@@ -496,16 +564,16 @@ export function LiveTranscriber({
       const edited = editedTextRef.current.trim();
       const carriedSegments: TranscriptSegment[] = edited
         ? [
-            {
-              id: `${Date.now()}-edited`,
-              text: edited,
-              timestamp: new Date().toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              }),
-            },
-          ]
+          {
+            id: `${Date.now()}-edited`,
+            text: edited,
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+        ]
         : [];
       segmentsRef.current = carriedSegments;
       setSegments(carriedSegments);
@@ -814,22 +882,22 @@ export function LiveTranscriber({
     label: string;
     available: boolean;
   }> = [
-    {
-      id: "gemini-live-3.1",
-      label: "Gemini AI",
-      available: Boolean(engineStatus?.geminiConfigured),
-    },
-    {
-      id: "faster-whisper",
-      label: "Faster-Whisper",
-      available: Boolean(engineStatus?.whisperConfigured),
-    },
-    {
-      id: "web-speech",
-      label: "Browser Speech",
-      available: true,
-    },
-  ];
+      {
+        id: "gemini-live-3.1",
+        label: "Gemini AI",
+        available: Boolean(engineStatus?.geminiConfigured),
+      },
+      {
+        id: "faster-whisper",
+        label: "Faster-Whisper",
+        available: Boolean(engineStatus?.whisperConfigured),
+      },
+      {
+        id: "web-speech",
+        label: "Browser Speech",
+        available: true,
+      },
+    ];
 
   const activeEngineLabel =
     engineTabs.find((t) => t.id === engine)?.label ?? "Gemini AI";
@@ -899,17 +967,19 @@ export function LiveTranscriber({
                     role="tab"
                     aria-selected={active}
                     disabled={isRecording}
-                    onClick={() => setEngine(tab.id)}
+                    onClick={() => {
+                      setEngine(tab.id);
+                      setError(null);
+                    }}
                     title={
                       tab.available
                         ? tab.label
                         : `${tab.label} is not configured in .env`
                     }
-                    className={`px-3 py-1.5 rounded-sm text-xs font-medium whitespace-nowrap transition duration-150 cursor-pointer disabled:cursor-not-allowed ${
-                      active
+                    className={`px-3 py-1.5 rounded-sm text-xs font-medium whitespace-nowrap transition duration-150 cursor-pointer disabled:cursor-not-allowed ${active
                         ? "bg-primary-container text-on-primary-container"
                         : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                    } ${!tab.available && !active ? "opacity-55" : ""}`}
+                      } ${!tab.available && !active ? "opacity-55" : ""}`}
                   >
                     {tab.label}
                   </button>
@@ -1032,11 +1102,10 @@ export function LiveTranscriber({
                     type="button"
                     disabled={isRecording}
                     onClick={() => updateNextBehavior(opt.id)}
-                    className={`px-2.5 py-1 rounded-sm text-xs font-medium transition cursor-pointer ${
-                      nextBehavior === opt.id
+                    className={`px-2.5 py-1 rounded-sm text-xs font-medium transition cursor-pointer ${nextBehavior === opt.id
                         ? "bg-primary-container text-on-primary-container"
                         : "text-on-surface-variant hover:text-on-surface"
-                    }`}
+                      }`}
                   >
                     {opt.label}
                   </button>
@@ -1049,13 +1118,12 @@ export function LiveTranscriber({
                   <span
                     key={i}
                     style={{ height: `${h}%` }}
-                    className={`w-1 rounded-full transition-all duration-75 ${
-                      isRecording
+                    className={`w-1 rounded-full transition-all duration-75 ${isRecording
                         ? i % 2 === 0
                           ? "bg-primary"
                           : "bg-secondary"
                         : "bg-outline-variant"
-                    }`}
+                      }`}
                   />
                 ))}
               </div>
@@ -1141,9 +1209,8 @@ export function LiveTranscriber({
             <div className="flex items-center justify-between border-b border-outline-variant pb-2.5">
               <span className="inline-flex items-center gap-1.5 font-mono text-xs text-secondary">
                 <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isRecording ? "bg-recording" : "bg-secondary"
-                  }`}
+                  className={`w-1.5 h-1.5 rounded-full ${isRecording ? "bg-recording" : "bg-secondary"
+                    }`}
                   aria-hidden="true"
                 />
                 <span>
@@ -1228,11 +1295,10 @@ export function LiveTranscriber({
                   type="button"
                   onClick={handleTtsPreview}
                   title="Play or stop Read Aloud (P)"
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
-                    speaking
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${speaking
                       ? "bg-error-container border-error text-on-error-container"
                       : "bg-surface-container-lowest border-outline-variant text-secondary hover:text-on-surface hover:bg-surface-container"
-                  }`}
+                    }`}
                 >
                   <span
                     className="material-symbols-outlined text-base"

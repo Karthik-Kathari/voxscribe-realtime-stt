@@ -284,11 +284,10 @@ export function HistoryDashboard({
             onClick={() => onFavoriteOnlyChange(!favoriteOnly)}
             aria-pressed={favoriteOnly}
             aria-label="Filter starred notes"
-            className={`w-10 h-9 rounded-lg bg-surface-container-lowest border flex items-center justify-center transition duration-150 cursor-pointer ${
-              favoriteOnly
+            className={`w-10 h-9 rounded-lg bg-surface-container-lowest border flex items-center justify-center transition duration-150 cursor-pointer ${favoriteOnly
                 ? "border-warning text-warning"
                 : "border-outline-variant text-on-surface-variant hover:text-warning"
-            }`}
+              }`}
           >
             <span
               className="material-symbols-outlined text-base"
@@ -349,179 +348,179 @@ export function HistoryDashboard({
                     : "border-outline-variant"
                 }`}
               >
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelectOne(item.id)}
-                        aria-label={`Select ${item.title}`}
-                        className="mt-1 rounded border-outline-variant bg-surface-container accent-primary-container cursor-pointer"
-                      />
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <h2 className="font-headline text-lg font-semibold text-on-surface truncate">
-                          {item.title}
-                        </h2>
-                        <span className="font-mono text-xs text-outline tabular-nums">
-                          {new Date(item.createdAt).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}{" "}
-                          · {formatDuration(item.durationSeconds)} ·{" "}
-                          {item.wordCount} words
-                        </span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void onToggleFavorite(item)}
-                      aria-label="Toggle star"
-                      className={`p-1.5 rounded-lg bg-surface-container border border-outline-variant transition cursor-pointer ${
-                        item.isFavorite ? "text-warning" : "text-outline hover:text-warning"
-                      }`}
-                    >
-                      <span
-                        className="material-symbols-outlined text-base"
-                        style={{
-                          fontVariationSettings: `'FILL' ${
-                            item.isFavorite ? 1 : 0
-                          }`,
-                        }}
-                      >
-                        star
-                      </span>
-                    </button>
-                  </div>
-
-                  <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-wrap">
-                    {item.content}
-                  </p>
-
-                  {item.notes && (
-                    <p className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3 py-2 text-xs text-on-surface-variant">
-                      <span className="font-medium text-on-surface">Note:</span>{" "}
-                      {item.notes}
-                    </p>
-                  )}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleSelectOne(item.id)}
+                  aria-label={`Select ${item.title}`}
+                  className="mt-1 rounded border-outline-variant bg-surface-container accent-primary-container cursor-pointer"
+                />
+                <div className="flex flex-col gap-1 min-w-0">
+                  <h2 className="font-headline text-lg font-semibold text-on-surface truncate">
+                    {item.title}
+                  </h2>
+                  <span className="font-mono text-xs text-outline tabular-nums">
+                    {new Date(item.createdAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}{" "}
+                    · {formatDuration(item.durationSeconds)} ·{" "}
+                    {item.wordCount} words
+                  </span>
                 </div>
+              </div>
 
-                <footer className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-outline-variant">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant text-xs font-medium text-secondary">
-                      {item.detectedLanguages[0] || item.language}
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-surface-container-lowest border border-outline-variant font-mono text-xs text-primary">
-                      {item.engine}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {isTtsSupported() && (
-                      <button
-                        type="button"
-                        onClick={() => handleSpeak(item)}
-                        aria-label="Play TTS"
-                        title={
-                          isSpeaking
-                            ? "Stop audio"
-                            : `Play TTS (${ttsRate.toFixed(1)}x)`
-                        }
-                        className={`p-1.5 rounded-lg transition cursor-pointer ${
-                          isSpeaking
-                            ? "bg-error-container text-on-error-container"
-                            : "bg-surface-container-high text-secondary hover:bg-surface-bright"
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-base">
-                          {isSpeaking ? "stop_circle" : "volume_up"}
-                        </span>
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => void handleCopy(item)}
-                      aria-label="Copy transcript"
-                      className="p-1.5 rounded-lg bg-surface-container-high text-on-surface-variant hover:text-on-surface transition cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-base">
-                        {copiedId === item.id ? "check" : "content_copy"}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onEdit(item)}
-                      className="px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-bright text-xs font-medium transition cursor-pointer"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDeletingItem(item)}
-                      aria-label="Delete record"
-                      className="p-1.5 rounded-lg bg-surface-container-high text-error hover:bg-error-container hover:text-on-error-container transition cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-base">
-                        delete
-                      </span>
-                    </button>
-                  </div>
-                </footer>
-              </article>
-            );
-          })}
-        </section>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingItem && (
-        <div
-          className="animate-backdrop-fade fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="deleteModalTitle"
-          onClick={() => !deletingBusy && setDeletingItem(null)}
-        >
-          <div
-            className="animate-modal-enter w-full max-w-md rounded-xl bg-surface-container border border-outline-variant p-6 flex flex-col gap-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              id="deleteModalTitle"
-              className="font-headline text-lg font-semibold text-on-surface"
-            >
-              Delete Transcription?
-            </h2>
-            <p className="text-sm text-on-surface-variant">
-              This will permanently remove{" "}
-              <strong className="text-on-surface">{deletingItem.title}</strong>{" "}
-              from your PostgreSQL history library.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
-                disabled={deletingBusy}
-                onClick={() => setDeletingItem(null)}
-                className="px-4 py-2 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant hover:bg-surface-bright text-xs font-medium cursor-pointer"
+                onClick={() => void onToggleFavorite(item)}
+                aria-label="Toggle star"
+                className={`p-1.5 rounded-lg bg-surface-container border border-outline-variant transition cursor-pointer ${item.isFavorite ? "text-warning" : "text-outline hover:text-warning"
+                  }`}
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingBusy}
-                onClick={() => void confirmDelete()}
-                className="px-4 py-2 rounded-lg bg-error-container text-on-error-container hover:opacity-90 text-xs font-medium disabled:opacity-50 cursor-pointer"
-              >
-                {deletingBusy ? "Deleting..." : "Delete Record"}
+                <span
+                  className="material-symbols-outlined text-base"
+                  style={{
+                    fontVariationSettings: `'FILL' ${item.isFavorite ? 1 : 0
+                      }`,
+                  }}
+                >
+                  star
+                </span>
               </button>
             </div>
+
+            <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-wrap">
+              {item.content}
+            </p>
+
+            {item.notes && (
+              <p className="rounded-lg bg-surface-container-lowest border border-outline-variant px-3 py-2 text-xs text-on-surface-variant">
+                <span className="font-medium text-on-surface">Note:</span>{" "}
+                {item.notes}
+              </p>
+            )}
           </div>
+
+          <footer className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-outline-variant">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-surface-container-high border border-outline-variant text-xs font-medium text-secondary">
+                {item.detectedLanguages[0] || item.language}
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-surface-container-lowest border border-outline-variant font-mono text-xs text-primary">
+                {item.engine}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              {isTtsSupported() && (
+                <button
+                  type="button"
+                  onClick={() => handleSpeak(item)}
+                  aria-label="Play TTS"
+                  title={
+                    isSpeaking
+                      ? "Stop audio"
+                      : `Play TTS (${ttsRate.toFixed(1)}x)`
+                  }
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${isSpeaking
+                      ? "bg-error-container text-on-error-container"
+                      : "bg-surface-container-high text-secondary hover:bg-surface-bright"
+                    }`}
+                >
+                  <span className="material-symbols-outlined text-base">
+                    {isSpeaking ? "stop_circle" : "volume_up"}
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void handleCopy(item)}
+                aria-label="Copy transcript"
+                className="p-1.5 rounded-lg bg-surface-container-high text-on-surface-variant hover:text-on-surface transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">
+                  {copiedId === item.id ? "check" : "content_copy"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onEdit(item)}
+                className="px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface hover:bg-surface-bright text-xs font-medium transition cursor-pointer"
+              >
+                Edit
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeletingItem(item)}
+                aria-label="Delete record"
+                className="p-1.5 rounded-lg bg-surface-container-high text-error hover:bg-error-container hover:text-on-error-container transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">
+                  delete
+                </span>
+              </button>
+            </div>
+          </footer>
+        </article>
+      );
+          })}
+    </section>
+  )
+}
+
+{/* Delete Confirmation Modal */ }
+{
+  deletingItem && (
+    <div
+      className="animate-backdrop-fade fixed inset-0 z-50 bg-scrim/70 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deleteModalTitle"
+      onClick={() => !deletingBusy && setDeletingItem(null)}
+    >
+      <div
+        className="animate-modal-enter w-full max-w-md rounded-xl bg-surface-container border border-outline-variant p-6 flex flex-col gap-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2
+          id="deleteModalTitle"
+          className="font-headline text-lg font-semibold text-on-surface"
+        >
+          Delete Transcription?
+        </h2>
+        <p className="text-sm text-on-surface-variant">
+          This will permanently remove{" "}
+          <strong className="text-on-surface">{deletingItem.title}</strong>{" "}
+          from your PostgreSQL history library.
+        </p>
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <button
+            type="button"
+            disabled={deletingBusy}
+            onClick={() => setDeletingItem(null)}
+            className="px-4 py-2 rounded-lg bg-surface-container-high text-on-surface border border-outline-variant hover:bg-surface-bright text-xs font-medium cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deletingBusy}
+            onClick={() => void confirmDelete()}
+            className="px-4 py-2 rounded-lg bg-error-container text-on-error-container hover:opacity-90 text-xs font-medium disabled:opacity-50 cursor-pointer"
+          >
+            {deletingBusy ? "Deleting..." : "Delete Record"}
+          </button>
         </div>
-      )}
+      </div>
     </div>
+  )
+}
+    </div >
   );
 }

@@ -1,0 +1,210 @@
+import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
+import WebSocket, { type RawData } from "ws";
+import { config } from "../config.js";
+
+function sendJson(ws: WebSocket, payload: Record<string, unknown>): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+function rawDataToBuffer(data: RawData): Buffer {
+  if (Buffer.isBuffer(data)) return data;
+  if (Array.isArray(data)) return Buffer.concat(data);
+  return Buffer.from(data);
+}
+
+/**
+ * Handles a browser WebSocket connection for real-time speech-to-text.
+ * Supports:
+ *  - engine=gemini  -> Gemini Live 3.1 API (gemini-3.1-flash-live-preview)
+ *  - engine=whisper -> Self-hosted open-source Faster-Whisper microservice
+ */
+export async function handleTranscribeSocket(
+  clientWs: WebSocket,
+  engine: string,
+  language: string
+): Promise<void> {
+  if (engine === "whisper") {
+    await bridgeWhisperSocket(clientWs, language);
+    return;
+  }
+
+  await bridgeGeminiLiveSocket(clientWs, language);
+}
+
+async function bridgeGeminiLiveSocket(
+  clientWs: WebSocket,
+  language: string
+): Promise<void> {
+  if (!config.geminiApiKey) {
+    sendJson(clientWs, {
+      type: "error",
+      message:
+        "GEMINI_API_KEY is not configured on the server. Add your free Google AI Studio key to .env or switch to Browser Speech.",
+    });
+    clientWs.close();
+    return;
+  }
+
+  const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
+  let closed = false;
+  let session: Awaited<ReturnType<typeof ai.live.connect>> | null = null;
+
+  const languageHint =
+    language === "hi-en" || language === "multilingual"
+      ? "The speaker may switch freely between Hindi, English (Hinglish), and other Indian languages."
+      : `The primary spoken language is ${language}.`;
+
+  try {
+    session = await ai.live.connect({
+      model: config.geminiLiveModel,
+      config: {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        systemInstruction: `You are a passive real-time speech-to-text listener. ${languageHint} Never converse or answer questions; stay silent and only let input audio transcription capture speech.`,
+      },
+      callbacks: {
+        onopen: () => {
+          sendJson(clientWs, {
+            type: "ready",
+            engine: config.geminiLiveModel,
+          });
+        },
+        onmessage: (message: LiveServerMessage) => {
+          if (closed) return;
+
+          if (message.setupComplete) {
+            sendJson(clientWs, {
+              type: "ready",
+              engine: config.geminiLiveModel,
+            });
+          }
+
+          const inputTx = message.serverContent?.inputTranscription;
+          if (inputTx?.text) {
+            sendJson(clientWs, {
+              type: "transcript",
+              text: inputTx.text,
+              isFinal: Boolean(inputTx.finished),
+              language,
+            });
+          }
+
+          if (message.serverContent?.turnComplete) {
+            sendJson(clientWs, { type: "turn_complete" });
+          }
+        },
+        onerror: (err: ErrorEvent) => {
+          console.error("[ws:gemini] Live API error:", err.message);
+          sendJson(clientWs, {
+            type: "error",
+            message: err.message || "Gemini Live API connection error",
+          });
+        },
+        onclose: () => {
+          if (!closed && clientWs.readyState === WebSocket.OPEN) {
+            sendJson(clientWs, { type: "done" });
+            clientWs.close();
+          }
+        },
+      },
+    });
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : "Failed to connect to Gemini Live";
+    console.error("[ws:gemini] Connect failed:", msg);
+    sendJson(clientWs, { type: "error", message: msg });
+    clientWs.close();
+    return;
+  }
+
+  clientWs.on("message", (data, isBinary) => {
+    if (!session || closed) return;
+
+    if (isBinary) {
+      const buf = rawDataToBuffer(data);
+      session.sendRealtimeInput({
+        audio: {
+          data: buf.toString("base64"),
+          mimeType: "audio/pcm;rate=16000",
+        },
+      });
+      return;
+    }
+
+    try {
+      const msg = JSON.parse(data.toString()) as { type?: string };
+      if (msg.type === "stop") {
+        session.sendRealtimeInput({ audioStreamEnd: true });
+      }
+    } catch {
+      // ignore malformed control frame
+    }
+  });
+
+  clientWs.on("close", () => {
+    closed = true;
+    try {
+      session?.close();
+    } catch {
+      // ignore close errors
+    }
+  });
+}
+
+async function bridgeWhisperSocket(
+  clientWs: WebSocket,
+  language: string
+): Promise<void> {
+  if (!config.whisperWsUrl) {
+    sendJson(clientWs, {
+      type: "error",
+      message:
+        "WHISPER_WS_URL is not configured. Start the Docker Faster-Whisper service or switch to Gemini Live 3.1 / Browser Speech.",
+    });
+    clientWs.close();
+    return;
+  }
+
+  const targetUrl = `${config.whisperWsUrl}?language=${encodeURIComponent(language)}`;
+  const upstream = new WebSocket(targetUrl);
+
+  upstream.on("open", () => {
+    sendJson(clientWs, { type: "ready", engine: "faster-whisper" });
+  });
+
+  upstream.on("message", (data, isBinary) => {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.send(isBinary ? rawDataToBuffer(data) : data.toString());
+    }
+  });
+
+  upstream.on("error", (err) => {
+    console.error("[ws:whisper] Upstream error:", err.message);
+    sendJson(clientWs, {
+      type: "error",
+      message: `Faster-Whisper service unavailable: ${err.message}`,
+    });
+    clientWs.close();
+  });
+
+  upstream.on("close", () => {
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.close();
+    }
+  });
+
+  clientWs.on("message", (data, isBinary) => {
+    if (upstream.readyState === WebSocket.OPEN) {
+      upstream.send(isBinary ? rawDataToBuffer(data) : data.toString());
+    }
+  });
+
+  clientWs.on("close", () => {
+    if (upstream.readyState === WebSocket.OPEN) {
+      upstream.close();
+    }
+  });
+}
+

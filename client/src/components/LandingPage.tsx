@@ -514,28 +514,47 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Trust & Value Proposition Bar */}
-        <section className="border-b border-outline-variant bg-surface-container-lowest">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[
-              { icon: "check_circle", color: "text-success", label: "100% Free" },
-              { icon: "code", color: "text-secondary", label: "Open Source" },
-              { icon: "credit_card_off", color: "text-primary", label: "No Subscription" },
-              { icon: "translate", color: "text-secondary", label: "Multilingual AI" },
-              { icon: "tune", color: "text-primary", label: "3 Speech Engines" },
-              { icon: "database", color: "text-secondary", label: "PostgreSQL Library" },
-            ].map((item, idx) => (
-              <Reveal key={item.label} delayMs={idx * 45}>
-                <div className="flex items-center gap-2.5">
-                  <span className={`material-symbols-outlined text-base ${item.color}`} aria-hidden="true">
-                    {item.icon}
-                  </span>
-                  <span className="text-xs font-medium text-on-surface">
-                    {item.label}
-                  </span>
+        {/* Trust & Value Proposition Marquee */}
+        <section
+          aria-label="Key capabilities"
+          className="border-b border-outline-variant bg-surface-container-lowest py-5 overflow-hidden"
+        >
+          <div className="marquee-mask max-w-7xl mx-auto overflow-hidden">
+            <div className="marquee-track">
+              {[0, 1].map((dupIdx) => (
+                <div
+                  key={dupIdx}
+                  aria-hidden={dupIdx === 1}
+                  className="flex shrink-0 items-center gap-10 sm:gap-14 pr-10 sm:pr-14"
+                >
+                  {[
+                    { icon: "check_circle", color: "text-success", label: "100% Free" },
+                    { icon: "code", color: "text-secondary", label: "Open Source" },
+                    { icon: "credit_card_off", color: "text-primary", label: "No Subscription" },
+                    { icon: "translate", color: "text-secondary", label: "Multilingual AI" },
+                    { icon: "tune", color: "text-primary", label: "3 Speech Engines" },
+                    { icon: "database", color: "text-secondary", label: "PostgreSQL Library" },
+                    { icon: "graphic_eq", color: "text-primary", label: "Real-Time Waveform" },
+                    { icon: "volume_up", color: "text-secondary", label: "Neural TTS (0.6x–1.8x)" },
+                  ].map((item) => (
+                    <div
+                      key={`${dupIdx}-${item.label}`}
+                      className="flex items-center gap-2.5 whitespace-nowrap"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-base ${item.color}`}
+                        aria-hidden="true"
+                      >
+                        {item.icon}
+                      </span>
+                      <span className="text-xs sm:text-sm font-medium text-on-surface">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              </Reveal>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
 

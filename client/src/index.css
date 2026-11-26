@@ -163,6 +163,44 @@
   }
 }
 
+@keyframes marqueeScroll {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 8%,
+    black 92%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 8%,
+    black 92%,
+    transparent
+  );
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marqueeScroll 26s linear infinite;
+  will-change: transform;
+}
+
+.marquee-mask:hover .marquee-track {
+  animation-play-state: paused;
+}
+
 @keyframes cardCascade {
   from {
     opacity: 0;
@@ -228,7 +266,8 @@
   .animate-modal-enter,
   .animate-backdrop-fade,
   .animate-rec-ring,
-  .animate-ambient-drift {
+  .animate-ambient-drift,
+  .marquee-track {
     animation: none !important;
   }
 

@@ -335,14 +335,15 @@ export function HistoryDashboard({
         </section>
       ) : (
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
-          {items.map((item) => {
+          {items.map((item, idx) => {
             const isSelected = selectedIds.includes(item.id);
             const isSpeaking = speakingId === item.id;
 
             return (
               <article
                 key={item.id}
-                className={`card-hover h-full rounded-xl bg-surface-container-low border p-5 flex flex-col justify-between gap-4 ${
+                style={{ animationDelay: `${Math.min(idx, 8) * 55}ms` }}
+                className={`animate-card-cascade card-hover h-full rounded-xl bg-surface-container-low border p-5 flex flex-col justify-between gap-4 ${
                   isSelected
                     ? "border-primary bg-surface-container"
                     : "border-outline-variant"

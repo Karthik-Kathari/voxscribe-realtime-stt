@@ -33,10 +33,11 @@ export function StatsBar({ stats }: StatsBarProps) {
       aria-label="Workspace summary"
       className="grid grid-cols-2 lg:grid-cols-4 gap-4"
     >
-      {items.map((item) => (
+      {items.map((item, idx) => (
         <div
           key={item.label}
-          className="card-hover rounded-xl bg-surface-container-low border border-outline-variant px-4 py-3 flex flex-col gap-1"
+          style={{ animationDelay: `${idx * 65}ms` }}
+          className="animate-card-cascade card-hover rounded-xl bg-surface-container-low border border-outline-variant px-4 py-3 flex flex-col gap-1"
         >
           <span className="text-xs font-medium tracking-wide text-outline">
             {item.label}

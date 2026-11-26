@@ -1113,7 +1113,7 @@ export function LiveTranscriber({
               </div>
 
               {/* Live Waveform Visualizer */}
-              <div className="w-48 sm:w-52 h-10 rounded-lg bg-surface-container border border-outline-variant px-3 flex items-center justify-between gap-0.5 overflow-hidden">
+              <div className="w-full sm:w-52 h-10 rounded-lg bg-surface-container border border-outline-variant px-3 flex items-center justify-between gap-0.5 overflow-hidden">
                 {waveform.map((h, i) => (
                   <span
                     key={i}

@@ -3,7 +3,6 @@ import {
   Check,
   Copy,
   Download,
-  Gauge,
   Save,
   Star,
   Volume2,
@@ -16,6 +15,7 @@ import {
   type Transcription,
 } from "../types";
 import { isTtsSupported, speakText, stopSpeaking } from "../lib/tts";
+import { TtsSpeedControl } from "./TtsSpeedControl";
 
 interface TranscriptModalProps {
   open: boolean;
@@ -216,21 +216,11 @@ export function TranscriptModal({
               <div className="flex flex-wrap items-center gap-1.5">
                 {isTtsSupported() && content.trim() && (
                   <>
-                    <div className="flex items-center gap-1.5 rounded-md border border-[#e5e2da] bg-[#faf9f5] px-2 py-0.5">
-                      <Gauge className="h-3 w-3 text-stone-500" />
-                      <input
-                        type="range"
-                        min="0.6"
-                        max="1.8"
-                        step="0.1"
-                        value={ttsRate}
-                        onChange={(e) => onTtsRateChange(Number(e.target.value))}
-                        className="h-1 w-16 cursor-pointer accent-zinc-900"
-                      />
-                      <span className="font-mono text-[10px] text-zinc-700">
-                        {ttsRate.toFixed(1)}x
-                      </span>
-                    </div>
+                    <TtsSpeedControl
+                      rate={ttsRate}
+                      onChange={onTtsRateChange}
+                      compact
+                    />
                     <button
                       type="button"
                       onClick={toggleSpeak}

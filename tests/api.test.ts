@@ -25,13 +25,14 @@ describe("Transcription helper utilities", () => {
     assert.equal(deriveTitle("Short Hindi test"), "Short Hindi test");
   });
 
-  it("detects Hindi (Devanagari) and English (Latin) scripts", () => {
+  it("detects Hindi (Devanagari), Kannada, Tamil, and English scripts", () => {
     assert.deepEqual(detectScripts("नमस्ते team, कैसे हो?"), [
-      "Hindi",
+      "Hindi / Devanagari",
       "English",
     ]);
     assert.deepEqual(detectScripts("Pure English sentence"), ["English"]);
-    assert.deepEqual(detectScripts("केवल हिंदी वाक्य"), ["Hindi"]);
+    assert.deepEqual(detectScripts("ನಮಸ್ಕಾರ ಬೆಂಗಳೂರು"), ["Kannada"]);
+    assert.deepEqual(detectScripts("வணக்கம் சென்னை"), ["Tamil"]);
   });
 });
 
@@ -101,7 +102,7 @@ describe("CRUD API integration against Neon PostgreSQL", () => {
     };
     assert.ok(created.id);
     createdId = created.id;
-    assert.ok(created.detectedLanguages.includes("Hindi"));
+    assert.ok(created.detectedLanguages.includes("Hindi / Devanagari"));
     assert.ok(created.detectedLanguages.includes("English"));
 
     // READ (list + search)
@@ -153,7 +154,7 @@ describe("CRUD API integration against Neon PostgreSQL", () => {
     assert.equal(getDeleted.status, 404);
   });
 
-  it("POST /api/tts synthesizes natural MP3 audio for Hinglish text", async () => {
+  it("POST /api/tts synthesizes natural MP3 audio for Hinglish and Kannada text", async () => {
     const res = await fetch(`${baseUrl}/api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -167,6 +168,19 @@ describe("CRUD API integration against Neon PostgreSQL", () => {
     assert.equal(res.headers.get("x-tts-voice"), "hi-IN-SwaraNeural");
     const buf = await res.arrayBuffer();
     assert.ok(buf.byteLength > 5000);
+
+    const knRes = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "ನಮಸ್ಕಾರ ಬೆಂಗಳೂರು",
+        language: "hi-en",
+      }),
+    });
+    assert.equal(knRes.status, 200);
+    assert.equal(knRes.headers.get("x-tts-voice"), "kn-IN-SapnaNeural");
+    const knBuf = await knRes.arrayBuffer();
+    assert.ok(knBuf.byteLength > 3000);
   });
 });
 

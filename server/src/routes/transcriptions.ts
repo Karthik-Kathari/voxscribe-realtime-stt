@@ -61,12 +61,15 @@ export function deriveTitle(content: string): string {
 
 export function detectScripts(text: string): string[] {
   const detected: string[] = [];
-  if (/[\u0900-\u097F]/.test(text)) detected.push("Hindi");
+  if (/[\u0900-\u097F]/.test(text)) detected.push("Hindi / Devanagari");
   if (/[A-Za-z]/.test(text)) detected.push("English");
+  if (/[\u0C80-\u0CFF]/.test(text)) detected.push("Kannada");
   if (/[\u0B80-\u0BFF]/.test(text)) detected.push("Tamil");
   if (/[\u0C00-\u0C7F]/.test(text)) detected.push("Telugu");
+  if (/[\u0D00-\u0D7F]/.test(text)) detected.push("Malayalam");
+  if (/[\u0A80-\u0AFF]/.test(text)) detected.push("Gujarati");
   if (/[\u0980-\u09FF]/.test(text)) detected.push("Bengali");
-  if (/[\u0C80-\u0CFF]/.test(text)) detected.push("Kannada");
+  if (/[\u0A00-\u0A7F]/.test(text)) detected.push("Punjabi");
   return detected.length > 0 ? detected : ["Multilingual"];
 }
 

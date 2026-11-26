@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
-  Gauge,
   Mic,
   RotateCcw,
   Save,
@@ -18,6 +17,7 @@ import {
   type SttEngine,
   type TranscriptSegment,
 } from "../types";
+import { TtsSpeedControl } from "./TtsSpeedControl";
 
 interface LiveTranscriberProps {
   engineStatus: EngineStatus | null;
@@ -76,7 +76,7 @@ export function LiveTranscriber({
   const [waveform, setWaveform] = useState<number[]>(() => Array(28).fill(10));
   const [error, setError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<string>(
-    "Ready. Press Space or click Record to speak in Hindi, English, or Hinglish."
+    "Ready. Press Space or click Record to speak in any supported language."
   );
   const [saving, setSaving] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -91,6 +91,11 @@ export function LiveTranscriber({
   const interimRef = useRef("");
   const elapsedRef = useRef(0);
   const hasSavedCurrentRef = useRef(false);
+  const doneResolverRef = useRef<(() => void) | null>(null);
+
+  const activeLanguageConfig =
+    LANGUAGE_OPTIONS.find((opt) => opt.value === language) ??
+    LANGUAGE_OPTIONS[0];
 
   useEffect(() => {
     if (!engineStatus) return;
@@ -117,7 +122,7 @@ export function LiveTranscriber({
 
   useEffect(() => {
     return () => {
-      void cleanupSession();
+      void forceCloseTransport();
       stopSpeaking();
     };
   }, []);
@@ -158,18 +163,17 @@ export function LiveTranscriber({
       minute: "2-digit",
       second: "2-digit",
     });
-    setSegments((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        text: cleaned,
-        language: detectedLang,
-        timestamp: stamp,
-      },
-    ]);
+    const nextSeg: TranscriptSegment = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      text: cleaned,
+      language: detectedLang,
+      timestamp: stamp,
+    };
+    segmentsRef.current = [...segmentsRef.current, nextSeg];
+    setSegments(segmentsRef.current);
   };
 
-  const cleanupSession = async () => {
+  const forceCloseTransport = async () => {
     isRecordingRef.current = false;
     isConnectingRef.current = false;
     stopTimer();
@@ -186,9 +190,6 @@ export function LiveTranscriber({
 
     if (wsRef.current) {
       try {
-        if (wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "stop" }));
-        }
         wsRef.current.close();
       } catch {
         // ignore close errors
@@ -226,7 +227,6 @@ export function LiveTranscriber({
 
     const earlyPcmQueue: ArrayBuffer[] = [];
 
-    // Start mic capture immediately in parallel with WebSocket handshake
     const micPromise = startPcmCapture((pcmBuffer, rms) => {
       pushWaveformLevel(rms);
       if (ws.readyState === WebSocket.OPEN) {
@@ -263,22 +263,33 @@ export function LiveTranscriber({
         } else if (msg.type === "transcript" && msg.text) {
           if (msg.isFinal) {
             appendFinalSegment(msg.text, msg.language);
+            interimRef.current = "";
             setInterimText("");
           } else {
             setInterimText((prev) => {
               const incoming = msg.text || "";
-              if (!prev) return incoming;
-              if (incoming.startsWith(prev)) return incoming;
-              return prev + incoming;
+              const next = !prev
+                ? incoming
+                : incoming.startsWith(prev)
+                  ? incoming
+                  : prev + incoming;
+              interimRef.current = next;
+              return next;
             });
           }
         } else if (msg.type === "turn_complete") {
           if (interimRef.current.trim()) {
             appendFinalSegment(interimRef.current);
+            interimRef.current = "";
             setInterimText("");
           }
+        } else if (msg.type === "done") {
+          doneResolverRef.current?.();
+          doneResolverRef.current = null;
         } else if (msg.type === "error") {
           setError(msg.message || "Transcription stream error");
+          doneResolverRef.current?.();
+          doneResolverRef.current = null;
           void handleStop(false);
         }
       } catch {
@@ -290,10 +301,14 @@ export function LiveTranscriber({
       setError("WebSocket connection error. Verify server & API key.");
       isConnectingRef.current = false;
       setIsConnecting(false);
+      doneResolverRef.current?.();
+      doneResolverRef.current = null;
       void handleStop(false);
     };
 
     ws.onclose = () => {
+      doneResolverRef.current?.();
+      doneResolverRef.current = null;
       if (isRecordingRef.current) {
         isRecordingRef.current = false;
         isConnectingRef.current = false;
@@ -322,7 +337,7 @@ export function LiveTranscriber({
       isConnectingRef.current = false;
       setIsConnecting(false);
       setIsRecording(false);
-      await cleanupSession();
+      await forceCloseTransport();
     }
   };
 
@@ -335,16 +350,15 @@ export function LiveTranscriber({
 
     if (!SpeechRec) {
       setError(
-        "Browser Web Speech API is unavailable here. Use Chrome/Edge or Gemini Live 3.1."
+        "Browser Web Speech API is unavailable here. Use Chrome/Edge or Gemini."
       );
       return;
     }
 
-    const langConfig = LANGUAGE_OPTIONS.find((o) => o.value === language);
     const recognition = new SpeechRec();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = langConfig?.speechLang || "en-IN";
+    recognition.lang = activeLanguageConfig.speechLang;
 
     recognition.onresult = (event) => {
       let interim = "";
@@ -357,6 +371,7 @@ export function LiveTranscriber({
           interim += transcript;
         }
       }
+      interimRef.current = interim;
       setInterimText(interim);
       pushWaveformLevel(0.18 + Math.random() * 0.22);
     };
@@ -382,7 +397,9 @@ export function LiveTranscriber({
     setError(null);
     setIsRecording(true);
     startTimer();
-    setStatusNote("Listening via Browser Speech... Press Space when finished.");
+    setStatusNote(
+      `Listening via Browser Speech (${activeLanguageConfig.speechLang})...`
+    );
     recognition.start();
   };
 
@@ -390,6 +407,8 @@ export function LiveTranscriber({
     if (isRecordingRef.current || isConnectingRef.current) return;
     setError(null);
     if (hasSavedCurrentRef.current) {
+      segmentsRef.current = [];
+      interimRef.current = "";
       setSegments([]);
       setInterimText("");
       setEditedText(null);
@@ -408,37 +427,81 @@ export function LiveTranscriber({
   };
 
   const handleStop = async (triggerAutoSave = true) => {
-    const finalInterim = interimRef.current.trim();
     const currentDuration = elapsedRef.current;
 
-    await cleanupSession();
+    // 1. Immediately stop mic capture & timer
+    isRecordingRef.current = false;
+    isConnectingRef.current = false;
     setIsRecording(false);
     setIsConnecting(false);
+    stopTimer();
+    setWaveform(Array(28).fill(10));
 
-    let finalSegments = [...segmentsRef.current];
+    if (audioRef.current) {
+      try {
+        await audioRef.current.stop();
+      } catch {
+        // ignore audio stop errors
+      }
+      audioRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch {
+        // ignore recognition stop errors
+      }
+      recognitionRef.current = null;
+    }
+
+    // 2. Gracefully flush final buffered audio over WebSocket & wait briefly for "done"
+    const ws = wsRef.current;
+    if (ws) {
+      if (ws.readyState === WebSocket.OPEN) {
+        setStatusNote("Finalizing transcript...");
+        await new Promise<void>((resolve) => {
+          const timeoutId = window.setTimeout(() => {
+            doneResolverRef.current = null;
+            resolve();
+          }, 2600);
+          doneResolverRef.current = () => {
+            window.clearTimeout(timeoutId);
+            resolve();
+          };
+          try {
+            ws.send(JSON.stringify({ type: "stop" }));
+          } catch {
+            window.clearTimeout(timeoutId);
+            resolve();
+          }
+        });
+      }
+      try {
+        ws.close();
+      } catch {
+        // ignore close errors
+      }
+      wsRef.current = null;
+    }
+
+    // 3. Commit any remaining interim text
+    const finalInterim = interimRef.current.trim();
     if (finalInterim) {
-      const seg: TranscriptSegment = {
-        id: `${Date.now()}-final`,
-        text: finalInterim,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      };
-      finalSegments = [...finalSegments, seg];
-      setSegments(finalSegments);
+      appendFinalSegment(finalInterim);
+      interimRef.current = "";
       setInterimText("");
     }
 
-    const fullContent = finalSegments
+    const fullContent = segmentsRef.current
       .map((s) => s.text)
       .join(" ")
       .trim();
 
     if (triggerAutoSave && autoSave && fullContent) {
       setStatusNote("Saving note to PostgreSQL...");
-      await persistCurrent(fullContent, finalSegments, currentDuration);
+      await persistCurrent(fullContent, segmentsRef.current, currentDuration);
     } else {
       setStatusNote("Stopped. Review, edit, or save below.");
     }
@@ -461,7 +524,7 @@ export function LiveTranscriber({
         language,
         engine,
         durationSeconds: overrideDuration ?? elapsedSeconds,
-        segments: overrideSegments ?? segments,
+        segments: overrideSegments ?? segmentsRef.current,
       });
       hasSavedCurrentRef.current = true;
       setStatusNote("Saved to history. Press Space anytime to record a new note.");
@@ -476,6 +539,8 @@ export function LiveTranscriber({
 
   const handleReset = () => {
     if (isRecording) return;
+    segmentsRef.current = [];
+    interimRef.current = "";
     setSegments([]);
     setInterimText("");
     setEditedText(null);
@@ -501,36 +566,53 @@ export function LiveTranscriber({
     });
   };
 
-  // Keep latest handlers in refs for global Spacebar shortcut
+  // Expose keyboard handlers via refs for Space, P (Read Aloud), Ctrl+S (Save)
   const handleStartRef = useRef(handleStart);
   const handleStopRef = useRef(handleStop);
+  const handleTtsRef = useRef(handleTtsPreview);
+  const handleSaveRef = useRef(persistCurrent);
   handleStartRef.current = handleStart;
   handleStopRef.current = handleStop;
+  handleTtsRef.current = handleTtsPreview;
+  handleSaveRef.current = persistCurrent;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (hotkeyDisabled) return;
-      if (e.code !== "Space" && e.key !== " ") return;
+
+      // Ctrl+S / Cmd+S works even inside inputs/textareas to save active note
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!isRecordingRef.current) {
+          void handleSaveRef.current();
+        }
+        return;
+      }
+
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
 
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
-      if (
+      const isInteractive =
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
         tag === "BUTTON" ||
         tag === "A" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
+        Boolean(target?.isContentEditable);
 
-      e.preventDefault();
-      if (isRecordingRef.current) {
-        void handleStopRef.current(true);
-      } else if (!isConnectingRef.current) {
-        void handleStartRef.current();
+      if (isInteractive) return;
+
+      if (e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        if (isRecordingRef.current) {
+          void handleStopRef.current(true);
+        } else if (!isConnectingRef.current) {
+          void handleStartRef.current();
+        }
+      } else if (e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        handleTtsRef.current();
       }
     };
 
@@ -545,7 +627,7 @@ export function LiveTranscriber({
   }> = [
     {
       id: "gemini-live-3.1",
-      label: "Gemini Live 3.1",
+      label: "Gemini AI",
       available: Boolean(engineStatus?.geminiConfigured),
     },
     {
@@ -572,7 +654,6 @@ export function LiveTranscriber({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Segmented Engine Picker */}
           <div className="inline-flex rounded-lg border border-[#e5e2da] bg-[#f5f4ef] p-0.5">
             {engineTabs.map((tab) => {
               const active = engine === tab.id;
@@ -604,6 +685,7 @@ export function LiveTranscriber({
             disabled={isRecording}
             onChange={(e) => setLanguage(e.target.value)}
             className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 focus:border-zinc-900 focus:outline-none disabled:opacity-60"
+            aria-label="Transcription language"
           >
             {LANGUAGE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -676,13 +758,12 @@ export function LiveTranscriber({
               <p className="mt-0.5 text-xs text-stone-500">
                 Try:{" "}
                 <span className="italic text-stone-600">
-                  &ldquo;Hello team, aaj ka standup 5 minute mein start karte hain.&rdquo;
+                  &ldquo;{activeLanguageConfig.sample}&rdquo;
                 </span>
               </p>
             </div>
           </div>
 
-          {/* Analog Level Meter */}
           <div className="flex h-9 items-center gap-1 self-end sm:self-center">
             {waveform.map((h, i) => (
               <span
@@ -717,9 +798,11 @@ export function LiveTranscriber({
               />
             ) : segments.length === 0 && !interimText ? (
               <div className="flex h-24 flex-col items-center justify-center text-center text-xs text-stone-400">
-                <p>Live words appear here as you speak.</p>
+                <p>
+                  Live words in <strong className="font-medium text-stone-600">{activeLanguageConfig.label}</strong> appear here as you speak.
+                </p>
                 <p className="mt-1 text-[11px] text-stone-400">
-                  Press <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">Space</kbd> anywhere outside text fields to toggle the mic.
+                  Press <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">Space</kbd> to toggle the mic or <kbd className="rounded border border-stone-300 bg-white px-1 py-0.5 text-[10px] text-stone-600">?</kbd> for all shortcuts.
                 </p>
               </div>
             ) : (
@@ -734,7 +817,6 @@ export function LiveTranscriber({
             )}
           </div>
 
-          {/* Footer Actions + TTS Speed Scroller */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
             <span className="font-mono text-xs text-stone-500">
               {combinedText
@@ -744,31 +826,14 @@ export function LiveTranscriber({
 
             <div className="flex flex-wrap items-center gap-2">
               {isTtsSupported() && (
-                <div className="flex items-center gap-2 rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-2.5 py-1">
-                  <Gauge className="h-3.5 w-3.5 text-stone-500" />
-                  <span className="text-[11px] font-medium text-stone-600">
-                    Speed
-                  </span>
-                  <input
-                    type="range"
-                    min="0.6"
-                    max="1.8"
-                    step="0.1"
-                    value={ttsRate}
-                    onChange={(e) => onTtsRateChange(Number(e.target.value))}
-                    className="h-1.5 w-20 cursor-pointer accent-zinc-900"
-                    title="Adjust Read Aloud TTS playback speed"
-                  />
-                  <span className="w-8 text-right font-mono text-[11px] font-medium text-zinc-800">
-                    {ttsRate.toFixed(1)}x
-                  </span>
-                </div>
+                <TtsSpeedControl rate={ttsRate} onChange={onTtsRateChange} />
               )}
 
               {isTtsSupported() && combinedText && (
                 <button
                   type="button"
                   onClick={handleTtsPreview}
+                  title="Play or stop Read Aloud (P)"
                   className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                     speaking
                       ? "border-red-300 bg-red-50 text-red-700"
@@ -803,6 +868,7 @@ export function LiveTranscriber({
                 type="button"
                 disabled={isRecording || saving || !combinedText}
                 onClick={() => void persistCurrent()}
+                title="Save note to PostgreSQL (Ctrl+S)"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
               >
                 <Save className="h-3.5 w-3.5" />

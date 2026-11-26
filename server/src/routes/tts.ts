@@ -10,37 +10,50 @@ const ttsSchema = z.object({
 });
 
 const HINGLISH_HINT_REGEX =
-  /\b(aaj|kal|mein|main|hain|hai|hoon|karte|karna|kya|kaise|bhai|yaar|theek|abhi|subah|shaam|raat|baat|samajh|bolo|chalo|accha|nahi|haan|kitne|baje|wala|wali|wale|hum|tum|aap|woh|yeh|liye|saath|par|aur|lekin|kyunki)\b/i;
+  /\b(aaj|kal|mein|main|hain|hai|hoon|karte|karna|kya|kaise|bhai|yaar|theek|abhi|subah|shaam|raat|baat|samajh|bolo|chalo|accha|nahi|haan|kitne|baje|wala|wali|wale|hum|tum|aap|woh|yeh|liye|saath|lekin|kyunki)\b/i;
 
 function pickNeuralVoice(text: string, language: string): string {
-  const hasDevanagari = /[\u0900-\u097F]/.test(text);
-  const looksHinglish = HINGLISH_HINT_REGEX.test(text);
-
-  if (
-    hasDevanagari ||
-    looksHinglish ||
-    language === "hi-IN" ||
-    language === "hi-en" ||
-    language === "multilingual"
-  ) {
-    return "hi-IN-SwaraNeural";
+  // 1. Native Unicode script always takes precedence so regional text is spoken accurately
+  if (/[\u0C80-\u0CFF]/.test(text)) return "kn-IN-SapnaNeural";
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta-IN-PallaviNeural";
+  if (/[\u0C00-\u0C7F]/.test(text)) return "te-IN-ShrutiNeural";
+  if (/[\u0D00-\u0D7F]/.test(text)) return "ml-IN-SobhanaNeural";
+  if (/[\u0A80-\u0AFF]/.test(text)) return "gu-IN-DhwaniNeural";
+  if (/[\u0980-\u09FF]/.test(text)) return "bn-IN-TanishaaNeural";
+  if (/[\u0900-\u097F]/.test(text)) {
+    return language === "mr-IN" ? "mr-IN-AarohiNeural" : "hi-IN-SwaraNeural";
   }
 
+  // 2. Explicit regional or English language selection
   switch (language) {
-    case "en-IN":
-      return "en-IN-NeerjaNeural";
-    case "en-US":
-      return "en-US-AriaNeural";
+    case "kn-IN":
+      return "kn-IN-SapnaNeural";
     case "ta-IN":
       return "ta-IN-PallaviNeural";
     case "te-IN":
       return "te-IN-ShrutiNeural";
-    case "kn-IN":
-      return "kn-IN-SapnaNeural";
+    case "ml-IN":
+      return "ml-IN-SobhanaNeural";
+    case "mr-IN":
+      return "mr-IN-AarohiNeural";
+    case "gu-IN":
+      return "gu-IN-DhwaniNeural";
     case "bn-IN":
       return "bn-IN-TanishaaNeural";
-    default:
+    case "hi-IN":
       return "hi-IN-SwaraNeural";
+    case "en-US":
+      return "en-US-AriaNeural";
+    case "en-IN":
+      return HINGLISH_HINT_REGEX.test(text)
+        ? "hi-IN-SwaraNeural"
+        : "en-IN-NeerjaNeural";
+    case "hi-en":
+    case "multilingual":
+    default:
+      return HINGLISH_HINT_REGEX.test(text) || language === "hi-en"
+        ? "hi-IN-SwaraNeural"
+        : "en-IN-NeerjaNeural";
   }
 }
 
@@ -84,4 +97,3 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 export default router;
-

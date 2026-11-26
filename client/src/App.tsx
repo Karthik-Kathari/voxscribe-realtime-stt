@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Header } from "./components/Header";
 import { HistoryDashboard } from "./components/HistoryDashboard";
 import { LiveTranscriber } from "./components/LiveTranscriber";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { StatsBar } from "./components/StatsBar";
 import { TranscriptModal } from "./components/TranscriptModal";
 import {
@@ -17,6 +18,7 @@ import {
   getSavedTtsRate,
   saveTtsRate,
   setLivePlaybackRate,
+  stopSpeaking,
 } from "./lib/tts";
 import type {
   EngineStatus,
@@ -44,19 +46,81 @@ export function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingItem, setEditingItem] = useState<Transcription | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const handleTtsRateChange = (nextRate: number) => {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const ttsRateRef = useRef(ttsRate);
+  ttsRateRef.current = ttsRate;
+
+  const handleTtsRateChange = useCallback((nextRate: number) => {
     const clamped = Math.min(1.8, Math.max(0.6, Number(nextRate.toFixed(1))));
     setTtsRate(clamped);
     saveTtsRate(clamped);
     setLivePlaybackRate(clamped);
-  };
+  }, []);
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2800);
   };
+
+  // Global app shortcuts: ? (Shortcuts), [ / ] (TTS speed), 0 (Reset speed), N (New Note), / (Search), Esc (Close/Stop)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (shortcutsOpen) {
+          setShortcutsOpen(false);
+          return;
+        }
+        if (modalOpen) {
+          setModalOpen(false);
+          return;
+        }
+        stopSpeaking();
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTyping =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        Boolean(target?.isContentEditable);
+
+      if (isTyping) return;
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+      } else if (modalOpen || shortcutsOpen) {
+        return;
+      } else if (e.key === "[") {
+        e.preventDefault();
+        handleTtsRateChange(ttsRateRef.current - 0.1);
+      } else if (e.key === "]") {
+        e.preventDefault();
+        handleTtsRateChange(ttsRateRef.current + 0.1);
+      } else if (e.key === "0") {
+        e.preventDefault();
+        handleTtsRateChange(1.0);
+      } else if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setModalMode("create");
+        setEditingItem(null);
+        setModalOpen(true);
+      } else if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen, shortcutsOpen, handleTtsRateChange]);
 
   const loadHealthAndStats = useCallback(async () => {
     try {
@@ -179,6 +243,7 @@ export function App() {
           setEditingItem(null);
           setModalOpen(true);
         }}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
       />
 
       <main className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
@@ -188,7 +253,7 @@ export function App() {
           engineStatus={engineStatus}
           ttsRate={ttsRate}
           onTtsRateChange={handleTtsRateChange}
-          hotkeyDisabled={modalOpen}
+          hotkeyDisabled={modalOpen || shortcutsOpen}
           onSaveTranscription={handleSaveFromLive}
         />
 
@@ -198,6 +263,7 @@ export function App() {
           loading={loading}
           ttsRate={ttsRate}
           onTtsRateChange={handleTtsRateChange}
+          searchInputRef={searchInputRef}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           languageFilter={languageFilter}
@@ -227,6 +293,11 @@ export function App() {
         onTtsRateChange={handleTtsRateChange}
         onClose={() => setModalOpen(false)}
         onSave={handleModalSave}
+      />
+
+      <ShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
       />
 
       {toast && (

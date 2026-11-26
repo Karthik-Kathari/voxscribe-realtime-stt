@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import {
   Check,
   Copy,
   Download,
   Edit3,
-  Gauge,
+  FileDown,
   Search,
   Star,
   Trash2,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import {
   LANGUAGE_OPTIONS,
@@ -17,6 +18,7 @@ import {
   type Transcription,
 } from "../types";
 import { isTtsSupported, speakText, stopSpeaking } from "../lib/tts";
+import { TtsSpeedControl } from "./TtsSpeedControl";
 
 interface HistoryDashboardProps {
   items: Transcription[];
@@ -24,6 +26,7 @@ interface HistoryDashboardProps {
   loading: boolean;
   ttsRate: number;
   onTtsRateChange: (rate: number) => void;
+  searchInputRef: RefObject<HTMLInputElement | null>;
   searchQuery: string;
   onSearchChange: (value: string) => void;
   languageFilter: string;
@@ -46,6 +49,7 @@ export function HistoryDashboard({
   loading,
   ttsRate,
   onTtsRateChange,
+  searchInputRef,
   searchQuery,
   onSearchChange,
   languageFilter,
@@ -107,6 +111,25 @@ export function HistoryDashboard({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportAllMarkdown = () => {
+    if (items.length === 0) return;
+    const md = items
+      .map(
+        (item) =>
+          `## ${item.title}\n- **Language:** ${item.language} | **Engine:** ${item.engine} | **Words:** ${item.wordCount} | **Date:** ${new Date(item.createdAt).toLocaleString()}\n\n${item.content}${item.notes ? `\n\n> Note: ${item.notes}` : ""}\n`
+      )
+      .join("\n---\n\n");
+    const blob = new Blob([`# VoxScribe Transcriptions\n\n${md}`], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "voxscribe_transcriptions.md";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleSpeak = (item: Transcription) => {
     if (speakingId === item.id) {
       stopSpeaking();
@@ -134,27 +157,21 @@ export function HistoryDashboard({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             {isTtsSupported() && (
-              <div className="flex items-center gap-2 rounded-lg border border-[#e5e2da] bg-[#faf9f5] px-2.5 py-1">
-                <Gauge className="h-3.5 w-3.5 text-stone-500" />
-                <span className="text-[11px] font-medium text-stone-600">
-                  TTS Speed
-                </span>
-                <input
-                  type="range"
-                  min="0.6"
-                  max="1.8"
-                  step="0.1"
-                  value={ttsRate}
-                  onChange={(e) => onTtsRateChange(Number(e.target.value))}
-                  className="h-1.5 w-20 cursor-pointer accent-zinc-900"
-                  title="Adjust playback speed for Read Aloud"
-                />
-                <span className="w-8 text-right font-mono text-[11px] font-medium text-zinc-800">
-                  {ttsRate.toFixed(1)}x
-                </span>
-              </div>
+              <TtsSpeedControl rate={ttsRate} onChange={onTtsRateChange} />
+            )}
+
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportAllMarkdown}
+                title="Export visible notes as Markdown"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-zinc-900"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Export .MD</span>
+              </button>
             )}
 
             {selectedIds.length > 0 && (
@@ -164,7 +181,7 @@ export function HistoryDashboard({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>Delete Selected ({selectedIds.length})</span>
+                <span>Delete ({selectedIds.length})</span>
               </button>
             )}
           </div>
@@ -174,12 +191,23 @@ export function HistoryDashboard({
           <div className="relative lg:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search notes, Hindi/English text..."
-              className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] py-1.5 pl-8 pr-3 text-xs text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
+              placeholder="Search notes, Hindi, Kannada, English... (/)"
+              className="w-full rounded-lg border border-[#d8d4ca] bg-[#faf9f5] py-1.5 pl-8 pr-8 text-xs text-zinc-900 placeholder:text-stone-400 focus:border-zinc-900 focus:bg-white focus:outline-none"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => onSearchChange("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-stone-400 hover:text-zinc-800"
+                title="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
 
           <select
@@ -201,7 +229,7 @@ export function HistoryDashboard({
             className="rounded-lg border border-[#d8d4ca] bg-white px-2.5 py-1.5 text-xs text-zinc-800 focus:border-zinc-900 focus:outline-none"
           >
             <option value="all">All Engines</option>
-            <option value="gemini-live-3.1">Gemini Live 3.1</option>
+            <option value="gemini-live-3.1">Gemini AI</option>
             <option value="faster-whisper">Faster-Whisper (OSS)</option>
             <option value="web-speech">Browser Speech</option>
             <option value="manual">Manual Entry</option>
@@ -265,7 +293,7 @@ export function HistoryDashboard({
         ) : items.length === 0 ? (
           <div className="px-6 py-12 text-center">
             <p className="text-sm font-medium text-zinc-800">
-              No saved transcriptions yet
+              No saved transcriptions found
             </p>
             <p className="mt-1 text-xs text-stone-500">
               Press Space to record your first voice note or click &ldquo;New Note&rdquo;.

@@ -154,9 +154,8 @@ export function TranscriptModal({
               type="button"
               onClick={() => setIsFavorite((v) => !v)}
               aria-label="Toggle star"
-              className={`w-8 h-8 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center cursor-pointer ${
-                isFavorite ? "text-warning" : "text-outline hover:text-warning"
-              }`}
+              className={`w-8 h-8 rounded-lg bg-surface-container-high border border-outline-variant flex items-center justify-center cursor-pointer ${isFavorite ? "text-warning" : "text-outline hover:text-warning"
+                }`}
             >
               <span
                 className="material-symbols-outlined text-base"
@@ -236,11 +235,10 @@ export function TranscriptModal({
                     <button
                       type="button"
                       onClick={toggleSpeak}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium cursor-pointer ${
-                        speaking
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium cursor-pointer ${speaking
                           ? "bg-error-container border-error text-on-error-container"
                           : "bg-surface-container-lowest border-outline-variant text-secondary hover:text-on-surface"
-                      }`}
+                        }`}
                     >
                       <span className="material-symbols-outlined text-sm">
                         {speaking ? "stop_circle" : "volume_up"}

@@ -66,7 +66,11 @@
     background-color: #13121C;
     color: #E4E0EE;
   }
-  code, pre, kbd, .font-mono {
+
+  code,
+  pre,
+  kbd,
+  .font-mono {
     font-family: "Red Hat Mono", ui-monospace, SFMono-Regular, monospace;
   }
 }
@@ -84,8 +88,15 @@
 }
 
 @keyframes wavePulse {
-  0%, 100% { transform: scaleY(0.35); }
-  50% { transform: scaleY(1); }
+
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
 }
 
 @keyframes pageEnter {
@@ -93,6 +104,7 @@
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -104,6 +116,7 @@
     opacity: 0;
     transform: scale(0.96) translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -111,23 +124,34 @@
 }
 
 @keyframes backdropFade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes recRingPulse {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
   }
+
   50% {
     box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
   }
 }
 
 @keyframes ambientDrift {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translate3d(0, 0, 0) scale(1);
   }
+
   50% {
     transform: translate3d(16px, -12px, 0) scale(1.05);
   }
@@ -176,6 +200,7 @@
     animation: none !important;
     transform: scaleY(0.65);
   }
+
   .animate-page-enter,
   .animate-modal-enter,
   .animate-backdrop-fade,
@@ -183,6 +208,7 @@
   .animate-ambient-drift {
     animation: none !important;
   }
+
   .card-hover:hover {
     transform: none;
   }
@@ -192,13 +218,16 @@
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(145, 143, 162, 0.25);
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(145, 143, 162, 0.45);
 }
